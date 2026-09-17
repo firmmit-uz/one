@@ -6,16 +6,27 @@
   "type": "module",
   "exports": {
     ".": "./src/index.mjs",
+    "./worker": {
+      "types": "./src/worker.d.ts",
+      "default": "./src/worker.mjs"
+    },
+    "./ids": {
+      "types": "./src/ids.d.ts",
+      "default": "./src/ids.mjs"
+    },
     "./schema/kpi-summary-v1.2.json": "./schema/kpi-summary-v1.2.json"
   },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node test/run-cases.mjs && node test/mutate.mjs && node test/semantic.test.mjs"
+    "build:validator": "node scripts/build-validator.mjs",
+    "test": "node scripts/build-validator.mjs && node test/run-cases.mjs && node test/mutate.mjs && node test/semantic.test.mjs && node test/worker.test.mjs && node test/ids.test.mjs"
   },
   "devDependencies": {
-    "ajv": "^8.20.0",
+    "ajv": "^8.20.0"
+  },
+  "dependencies": {
     "ajv-formats": "^3.0.1"
   }
 }

@@ -45,6 +45,9 @@ if (AUTO_SYNC) {
     .run(iso(-4 * 60_000), iso(-4 * 60_000));
 }
 
+// WP2: 홈 화면 KPI (가짜 값 — 실제 운영 수치 아님)
+import { refreshInternalKpis } from '../src/kpi/gateway';
+
 const up = sqlite.prepare(
   'INSERT INTO uptime_state (app_id, state, consecutive_failures, last_checked_at, last_change_at, last_status_code) VALUES (?, ?, ?, ?, ?, ?)',
 );
@@ -76,6 +79,10 @@ function staticHeaders(): Record<string, string> {
 }
 const HEADERS = staticHeaders();
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+
+// 서버가 뜨기 전에 KPI 캐시를 한 번 채운다 (STALE=1 이면 15분을 넘겨 "지연" 으로 보이게 한다)
+const kpiAt = process.env.STALE === '1' ? new Date(now.getTime() - 45 * 60_000) : now;
+await refreshInternalKpis(d1 as unknown as D1Database, 'production', { now: () => kpiAt, requestId: 'ui-server' });
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', ORIGIN);

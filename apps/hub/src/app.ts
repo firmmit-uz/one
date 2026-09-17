@@ -10,6 +10,7 @@ import { ValidationError } from './validate';
 import { canSeeApp, listApps, toLauncherItem } from './apps';
 import type { UptimeRow } from './uptime';
 import { adminRoutes } from './admin';
+import { kpiRoutes } from './kpi/routes';
 
 export type Vars = {
   requestId: string;
@@ -175,6 +176,7 @@ export function createApp(deps: AppDeps = {}) {
     return c.json({ detail: p.isHubAdmin, summary, last_checked_at: lastChecked, items });
   });
 
+  app.route('/api/kpi', kpiRoutes());
   app.route('/api/admin', adminRoutes());
 
   app.notFound((c) => jsonError(c, 404, 'not_found', 'Not found'));

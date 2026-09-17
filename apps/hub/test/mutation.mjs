@@ -28,13 +28,29 @@ const MUTANTS = [
   ['groupsync: ADMIN 0명 거부 끔', 'src/groupsync.ts', "if ((found.get(g) ?? []).length === 0) return { ok: false, code: 'admin_group_empty' };", ''],
   ['groupsync: 실패해도 사본 교체', 'src/groupsync.ts', 'const parsed = fetched.ok ? parseGroups(fetched.result) : fetched;', 'const parsed = parseGroups(fetched.ok ? fetched.result : []);'],
   ['admin: 자동 모드에서 수동 입력 허용', 'src/admin.ts', 'if (isAutoSyncEnabled(c.env)) {', 'if (false) {'],
+  // WP2
+  ['kpi: stale 재계산 결과 무시', 'src/kpi/gateway.ts', "return stale.is_stale ? worstStatus(base, 'stale') : base;", 'return base;'],
+  [
+    'kpi: 권한 필터 끔',
+    'src/kpi/gateway.ts',
+    '    const level = viewLevelFor(def.kpi_id, visibility, groups);\n    if (level === null) continue; // 권한 없음 → 응답에서 제거',
+    "    const level = viewLevelFor(def.kpi_id, visibility, groups) ?? 'summary';",
+  ],
+  [
+    'kpi: 소스 봉투 검증 끔 (통화 합산·개인정보 검사 포함)',
+    'src/kpi/source.ts',
+    /  if \(!r\.ok\) \{\n    return \{ ok: false, code: 'SOURCE_SCHEMA'[\s\S]*?\n  \}\n/,
+    '',
+  ],
+  ['kpi: 증적 형식 검사 끔', 'src/kpi/phase0.ts', 'for (const b of EVIDENCE_BANNED) if (b.re.test(value)) return { ok: false, reason: b.reason };', ''],
+  ['kpi: 깨진 캐시도 내보냄', 'src/kpi/gateway.ts', "if (typeof kpi.measure !== 'object' || kpi.measure === null) return null;", ''],
 ];
 
 function prepare(name, mutate) {
   const dir = join(WORK, name);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  for (const part of ['src', 'test', 'migrations', 'public', 'scripts', 'vitest.config.ts', 'package.json', 'tsconfig.json', 'wrangler.jsonc']) {
+  for (const part of ['src', 'test', 'migrations', 'public', 'scripts', 'docs', 'vitest.config.ts', 'package.json', 'tsconfig.json', 'wrangler.jsonc']) {
     cpSync(join(HUB, part), join(dir, part), {
       recursive: true,
       filter: (p) => !p.includes(`${'/'}screens`) && !p.endsWith('.ui-server.mjs'),

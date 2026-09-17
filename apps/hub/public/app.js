@@ -262,6 +262,120 @@ function staleBanner() {
   );
 }
 
+// ---------- KPI (WP2) ----------
+const KPI_ICON = { ok: '✓', stale: '⏱', partial: '◐', error: '!', unavailable: '·' };
+// 새로 stale/error 가 된 KPI 는 한 번만 알린다 (WCAG 2.2 SC 4.1.3)
+const kpiSeen = new Map();
+
+function kpiName(k) {
+  const key = `kpi_${k.kpi_id.replace('.', '_')}`;
+  const dict = DICT[state.lang] || DICT.ko;
+  return dict[key] ?? DICT.ko[key] ?? k.name_ko ?? k.kpi_id;
+}
+
+function kpiStatusBadge(status) {
+  const kind = { ok: 'state-up', stale: 'warn', partial: 'warn', error: 'state-down', unavailable: 'muted' }[status] || 'muted';
+  return badge(kind, t(`kpi_status_${status}`), KPI_ICON[status] || '?');
+}
+
+// 값 표시 규칙 (R4 §2.4). null 과 0 을 구분하고, 오류는 0 으로 바꾸지 않는다.
+function kpiValueText(k) {
+  const m = k.measure || {};
+  if (k.display_status === 'unavailable') return t('kpi_preparing');
+  if (m.value === null || m.value === undefined) {
+    // 건수 KPI 는 마지막 정상값을 쓸 수 있으면 쓰고, 아니면 "—"
+    return k.last_success_at ? t('kpi_last_good') : '—';
+  }
+  if (m.kind === 'count') return String(m.value);
+  if (m.kind === 'state') return t(`state_${m.value}`) || String(m.value);
+  return String(m.value);
+}
+
+function kpiCard(k) {
+  const head = el('div', { class: 'kpi-head' }, el('h3', { text: kpiName(k) }), kpiStatusBadge(k.display_status));
+  const value = el('p', { class: 'kpi-value', text: kpiValueText(k) });
+  const meta = el('p', { class: 'meta' });
+  if (k.display_status === 'stale') {
+    append(meta, [t('kpi_stale_hint', { time: fmtTime(k.stale.basis_at), n: Math.round((k.stale.threshold_seconds || 0) / 60) })]);
+  } else if (k.display_status === 'unavailable') {
+    append(meta, [t('kpi_unavailable_hint')]);
+  } else {
+    append(meta, [t('kpi_updated', { time: fmtTime(k.updated_at) })]);
+  }
+  const card = el('article', { class: `kpi-card kpi-${k.display_status}` }, head, value, meta);
+  if (Array.isArray(k.breakdown) && k.breakdown.length) card.append(breakdownToggle(k));
+  return card;
+}
+
+// 차트는 없지만 세부값은 반드시 표로도 볼 수 있어야 한다
+function breakdownToggle(k) {
+  const rows = k.breakdown.map((b) =>
+    el('tr', {}, el('td', {}, el('code', { text: b.key })), el('td', { text: kpiValueText({ measure: b.measure, display_status: 'ok' }) })),
+  );
+  const box = el('div', { hidden: true }, table([t('col_item'), t('col_value')], rows, { label: kpiName(k), stack: true }));
+  const btn = el('button', {
+    type: 'button',
+    class: 'btn btn-secondary btn-sm',
+    text: t('show_table'),
+    'aria-expanded': 'false',
+    onclick: () => {
+      const open = box.hidden;
+      box.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = open ? t('hide_table') : t('show_table');
+    },
+  });
+  return el('div', { class: 'kpi-detail' }, btn, box);
+}
+
+/** 홈 상단 고정 줄: 데이터 기준 · 지연 KPI 수 · 다운 수 */
+function kpiStatusLine(data) {
+  const down = data.kpis.find((k) => k.kpi_id === 'SYS.UPTIME');
+  const downText = down && down.measure && down.measure.value !== null ? String(down.measure.value) : '—';
+  const line = el(
+    'a',
+    { class: 'status-line', href: '#/status' },
+    el('span', { text: t('kpi_as_of', { time: fmtTime(data.as_of) }) }),
+    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
+    el('span', { text: t('kpi_stale_n', { n: data.summary.stale }) }),
+    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
+    el('span', { text: t('kpi_down_n', { n: downText }) }),
+  );
+  return line;
+}
+
+// 새로 나빠진 KPI 만 한 번 알린다
+function announceKpiChanges(data) {
+  const region = document.getElementById('kpi-live');
+  if (!region) return;
+  const newly = [];
+  for (const k of data.kpis) {
+    const before = kpiSeen.get(k.kpi_id);
+    if (before !== k.display_status && (k.display_status === 'stale' || k.display_status === 'error')) newly.push(kpiName(k));
+    kpiSeen.set(k.kpi_id, k.display_status);
+  }
+  put(region, newly.length ? el('p', { text: t('kpi_changed', { list: newly.join(', ') }) }) : null);
+}
+
+async function kpiSection() {
+  const box = el('section', { class: 'panel kpi-panel' }, sectionHead(t('kpi_system')), loading());
+  try {
+    const data = await api('/api/kpi');
+    if (!Array.isArray(data.kpis)) throw new ApiError(200, 'invalid_response');
+    announceKpiChanges(data);
+    put(box,
+      kpiStatusLine(data),
+      sectionHead(t('kpi_system')),
+      data.kpis.length
+        ? el('div', { class: 'kpi-grid' }, data.kpis.map(kpiCard))
+        : el('p', { class: 'empty', text: t('group_empty') }),
+    );
+  } catch (err) {
+    put(box, sectionHead(t('kpi_system')), errorBox(err, () => render()));
+  }
+  return box;
+}
+
 // ---------- 홈: 런처 ----------
 async function viewHome(main) {
   let data;
@@ -286,12 +400,15 @@ async function viewHome(main) {
       items.length === 0 ? el('p', { class: 'empty', text: t('group_empty') }) : el('ul', { class: 'card-grid' }, items.map(appCard)),
     );
   });
+  const kpis = el('div');
   put(main,
     el('h1', { class: 'page-title', text: t('greeting', { name: state.me.display_name }) }),
+    kpis,
     el('p', { class: 'lead', text: t('home_intro') }),
     staleBanner(),
     ...sections,
   );
+  put(kpis, await kpiSection());
 }
 
 function appCard(app) {

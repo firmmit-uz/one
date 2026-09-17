@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://one.firmmit.com/schemas/hub-kpi-response/1.0.json",
+  "title": "FIRMMIT ONE 허브 — GET /api/kpi 응답 (v1)",
+  "description": "허브가 브라우저에 내려보내는 KPI 목록. 소스 봉투(계약 v1.2)와 다르다: 권한 필터를 거친 뒤 ONE 이 다시 판정한 신선도(stale)와 표시용 필드가 붙어 있다. 권한이 없는 KPI 는 이 응답에 아예 없다(\"권한 없음\" 항목도 만들지 않는다).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["as_of", "summary", "kpis"],
+  "properties": {
+    "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "보이는 KPI 중 가장 늦게 수집된 시각. 화면 상단 고정 줄의 \"데이터 기준\"."
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visible", "stale", "error", "unavailable"],
+      "properties": {
+        "visible": { "type": "integer", "minimum": 0, "description": "요청자가 볼 수 있는 KPI 수" },
+        "stale": { "type": "integer", "minimum": 0 },
+        "error": { "type": "integer", "minimum": 0 },
+        "unavailable": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "kpis": { "type": "array", "items": { "$ref": "#/$defs/kpiView" } }
+  },
+  "$defs": {
+    "status": { "enum": ["ok", "stale", "partial", "error", "unavailable"] },
+    "measure": {
+      "type": "object",
+      "required": ["kind", "value", "unit"],
+      "properties": {
+        "kind": { "enum": ["money", "count", "ratio", "quantity", "timestamp", "state", "fx_rate"] },
+        "value": { "description": "null = 미측정. 0 과 구분한다." },
+        "unit": { "type": "string" }
+      }
+    },
+    "stale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["is_stale", "basis", "basis_at", "threshold_seconds", "age_seconds", "calendar", "verdict_source"],
+      "properties": {
+        "is_stale": { "type": "boolean" },
+        "basis": { "enum": ["updated_at", "data_as_of"], "description": "kpi_def.clock_basis 에서 온다" },
+        "basis_at": { "type": ["string", "null"] },
+        "threshold_seconds": { "type": "integer", "minimum": 1, "description": "kpi_def.tier 에서 계산한 기준(R4 §1.0)" },
+        "age_seconds": { "type": ["integer", "null"], "description": "null = 기준 시각을 해석할 수 없음 → is_stale true" },
+        "calendar": { "type": ["string", "null"], "description": "영업일 달력이 필요한 등급이면 그 이름. 달력 적용 자체는 Phase 2." },
+        "verdict_source": { "const": "one", "description": "판정 주체. 소스의 자기 신고는 참고만 한다." }
+      }
+    },
+    "kpiView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kpi_id", "definition_version", "name_ko", "tier", "status", "display_status", "source_status",
+        "measure", "period", "updated_at", "data_as_of", "fetched_at", "last_success_at", "age_seconds", "stale", "view_level"
+      ],
+      "properties": {
+        "kpi_id": { "type": "string", "pattern": "^[A-Z]{2,4}\\.[A-Z0-9_]{2,40}$" },
+        "definition_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+        "name_ko": { "type": "string" },
+        "tier": { "enum": ["T-RT", "T-OPS", "T-DAY", "T-BANK", "T-WEEK", "T-MONTH", "T-REF", "T-SYS"] },
+        "status": { "$ref": "#/$defs/status", "description": "display_status 와 같다(화면 호환용)" },
+        "display_status": { "$ref": "#/$defs/status", "description": "ONE 최종 판정. 우선순위 error > unavailable > stale > partial > ok" },
+        "source_status": { "type": "string", "description": "소스가 보낸 값 그대로(비교용)" },
+        "measure": { "$ref": "#/$defs/measure" },
+        "period": { "type": "object" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "data_as_of": { "type": ["string", "null"] },
+        "fetched_at": { "type": "string", "format": "date-time", "description": "ONE 이 소스에서 받은 시각" },
+        "last_success_at": { "type": ["string", "null"], "description": "마지막으로 값이 있었던 시각. 오류가 나도 지우지 않는다." },
+        "age_seconds": { "type": ["integer", "null"] },
+        "stale": { "$ref": "#/$defs/stale" },
+        "view_level": { "enum": ["summary", "detail"], "description": "요청자의 열람 수준. summary 는 세부(breakdown)를 주지 않는다." },
+        "quality": { "type": "object" },
+        "breakdown": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "measure"],
+            "properties": { "key": { "type": "string" }, "measure": { "$ref": "#/$defs/measure" } }
+          }
+        },
+        "error": { "type": "object" },
+        "sensitivity": { "enum": ["internal", "department", "finance"], "description": "personal 은 받지도 내보내지도 않는다" },
+        "drilldown_app": { "type": "string" }
+      }
+    }
+  }
+}

@@ -4,8 +4,29 @@
 설계 근거는 R4 설계서 §2.2(스키마 전문·예시)와 §2.3(ONE 쪽 규칙)이다.
 
 - 스키마: `schema/kpi-summary-v1.2.json` (JSON Schema 2020-12)
-- 검증기: `src/validate.mjs` — `validateEnvelope(rawText)` → `{ ok, errors[] }`
+- 진입점 2개 (판정은 서로 같다 — 85개 사례로 시험)
+  | 쓰는 곳 | import | 스키마 검사 방식 |
+  |---|---|---|
+  | Node (시험·도구) | `@firmmit-one/contracts` → `src/validate.mjs` | Ajv 가 실행 중에 컴파일 (`new Function`) + `node:fs` 로 스키마 읽기 |
+  | **Cloudflare Workers** | `@firmmit-one/contracts/worker` → `src/worker.mjs` | **빌드 시점 사전 컴파일본** (`src/generated/schema-validator.mjs`) |
+- 공용 코드: `src/core.mjs` — 원문 토큰 검사 · 의미 검사 · 시각 계산 (Node 전용 API 없음)
+- 공통 ID 검사기: `@firmmit-one/contracts/ids` → `src/ids.mjs` (R4 §3.2, 확정 6종 · 초안 5종)
 - 예시: `examples/kpi-summary-v1.2.example.json` (R4 §2.2 예시와 같음)
+
+> **Worker 에서 `src/validate.mjs` 를 import 하지 않는다.** Workers 는 `eval` 과 `new Function` 을 허용하지 않는다
+> (공식 문서 "JavaScript and web standards", 2026-09-17 확인). `nodejs_compat` 으로 우회하지 않는다.
+
+## 사전 컴파일 검사기
+
+```bash
+npm run build:validator -w @firmmit-one/contracts
+```
+
+- 만드는 것: `src/generated/schema-validator.mjs`(Ajv standalone, ESM) · `src/generated/schema-meta.mjs`(스키마 SHA-256, 규칙 포인터 표)
+- 생성물은 **저장소에 포함한다**. 스키마를 고치면 다시 만들어야 하고, 안 하면 `test/worker.test.mjs` 의 해시 비교가 실패한다.
+- 형식(format) 검사는 `ajv-formats/dist/formats.js` 의 실제 구현을 그대로 import 한다(그 파일에는 `require`·`eval`·`new Function` 이 없다).
+- Ajv 가 박아 넣는 `require("ajv/dist/runtime/ucs2length")` 는 빌드 스크립트가 같은 구현으로 바꾼다.
+- 생성물·번들에 금지 구문이 없는지 빌드와 시험에서 모두 확인한다.
 
 ## 실행
 
@@ -20,13 +41,16 @@ npm test -w @firmmit-one/contracts
 npm test
 ```
 
-`npm test`는 세 단계를 차례로 실행하고, 하나라도 실패하면 종료코드가 0이 아니다.
+`npm test`는 사전 컴파일 검사기를 먼저 만든 뒤 다섯 단계를 차례로 실행하고, 하나라도 실패하면 종료코드가 0이 아니다.
 
 | 단계 | 파일 | 실패 조건 |
 |---|---|---|
+| 검사기 생성 | `scripts/build-validator.mjs` | 생성물에 금지 구문(`eval`·`new Function`·`node:`·`require`) |
 | 케이스 표 | `test/run-cases.mjs` | v1.2 불일치 1건 이상, 형식 검사 카나리아 실패 |
 | 변이 시험 | `test/mutate.mjs` | 검출되지 않은(생존) 변이 1건 이상, 기준선 실패 |
 | 외부 검증 재현 | `test/semantic.test.mjs` | 증거 해시 불일치, GPT 결론(v1.0 15건·v1.1 0건·변이 10/10) 재현 실패, P01·P02가 v1.2에서 의도한 규칙으로 거부되지 않음 |
+| Worker 진입점 | `test/worker.test.mjs` | 스키마 해시 불일치(= 다시 만들어야 함), 금지 구문, 형식 카나리아 실패, 85개 사례에서 Node 진입점과 판정·거부 계층·규칙이 다름 |
+| 공통 ID | `test/ids.test.mjs` | 유형별 통과·거부 사례 불일치, 확정 6종/초안 5종 구분 깨짐 |
 
 ### lock 파일
 

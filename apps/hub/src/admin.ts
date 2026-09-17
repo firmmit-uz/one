@@ -14,6 +14,7 @@ import {
   snapshotReplaceStmts,
 } from './groupsync';
 import { ApiError, errorIncludes, jsonError } from './http';
+import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
 import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
 
 const GROUP_RE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -315,6 +316,22 @@ export function adminRoutes() {
       };
     });
     return c.json({ synced_at: now, groups: body.groups.length, members });
+  });
+
+  // Phase 0 게이트 G1 체크리스트 (허브 자체 관리 입력 — 하위 앱에 쓰지 않는다)
+  r.get('/phase0', async (c) => c.json(await listPhase0(c.env.DB)));
+
+  r.post('/phase0/:item_id', async (c) => {
+    const update = await parsePhase0Body(c.req.raw);
+    const item = await applyPhase0Update(
+      c.env.DB,
+      c.req.param('item_id'),
+      update,
+      c.get('principal').email,
+      c.get('now'),
+      c.get('requestId'),
+    );
+    return c.json({ item });
   });
 
   r.get('/audit', async (c) => {

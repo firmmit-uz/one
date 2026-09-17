@@ -152,7 +152,7 @@ def flow_revoke(browser, base):
     fp.goto(f"{base}/#/home")
     fp.wait_for_selector("a.card")
     focus = {}
-    for i in range(12):
+    for i in range(40):  # KPI 패널이 홈 위쪽에 생겨 카드까지 Tab 수가 늘었다
         fp.keyboard.press("Tab")
         focus = fp.evaluate("""() => { const e = document.activeElement; const s = getComputedStyle(e);
           return { tag: e.tagName, cls: e.className, text: (e.textContent||'').trim().slice(0,20), outline: s.outlineStyle + ' ' + s.outlineWidth + ' ' + s.outlineColor }; }""")

@@ -266,3 +266,27 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---- KPI (WP2) ---- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.status-line {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 14px; margin: 0 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); text-decoration: none; font-size: 14px;
+}
+.status-line:hover, .status-line:focus-visible { border-color: var(--brand); }
+.status-line .sep { color: var(--text-2); }
+.kpi-panel { margin-bottom: 20px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.kpi-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; background: var(--surface); }
+.kpi-card.kpi-stale { border-color: #B45309; }
+.kpi-card.kpi-error { border-color: var(--bad); }
+.kpi-card.kpi-unavailable { border-style: dashed; }
+.kpi-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.kpi-head h3 { margin: 0; font-size: 15px; }
+.kpi-value { margin: 10px 0 4px; font-size: 30px; font-weight: 700; line-height: 1.1; }
+.kpi-detail { margin-top: 10px; }
+.kpi-detail .table-wrap { margin-top: 8px; }
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}
