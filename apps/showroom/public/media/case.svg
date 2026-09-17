@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-label="자리표시자 이미지">
+  <rect width="960" height="540" fill="#EDF7F0"/>
+  <g stroke="#2A7FFA" stroke-width="4" fill="none" opacity="0.5">
+    <path d="M120 420 L 220 300 L 320 350 L 420 230 L 520 280 L 620 180 L 720 220 L 840 140"/>
+  </g>
+  <g fill="#292C34" opacity="0.18">
+    <rect x="120" y="440" width="720" height="10" rx="5"/>
+  </g>
+  <text x="480" y="500" text-anchor="middle" font-family="system-ui, sans-serif" font-size="24" fill="#6B6F7A">실제 수치는 승인 뒤에 넣습니다</text>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-label="자리표시자 이미지">
+  <rect width="960" height="540" fill="#E8EEFF"/>
+  <g fill="none" stroke="#3365FF" stroke-width="3" opacity="0.55">
+    <path d="M80 420 Q 480 180 880 420"/>
+    <path d="M80 460 Q 480 220 880 460"/>
+    <path d="M80 380 Q 480 140 880 380"/>
+  </g>
+  <circle cx="480" cy="250" r="70" fill="#3365FF" opacity="0.12"/>
+  <text x="480" y="262" text-anchor="middle" font-family="system-ui, sans-serif" font-size="30" fill="#292C34">승인 전 자리표시자</text>
+  <text x="480" y="302" text-anchor="middle" font-family="system-ui, sans-serif" font-size="22" fill="#6B6F7A">Placeholder until approved</text>
+</svg>

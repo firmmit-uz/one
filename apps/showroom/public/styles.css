@@ -1,0 +1,183 @@
+/* FIRMMIT ONE TV 쇼룸
+   - 16:9 기준. 1920×1080 과 3840×2160 에서 확인한다.
+   - 여백은 EBU R 95 의 graphics safe area 5%(상·하·좌·우)를 따른다.
+     출처: https://tech.ebu.ch/publications/r095 (2026-09-17 확인)
+     "The action safe area is 3.5% and the graphics safe area is 5%, at the top, bottom and lateral parts"
+   - 멀리서 보는 화면이라 글자는 화면 너비(vw)에 비례해 키운다.
+   - 색: 퍼밋블루 #3365FF · 차콜블랙 #292C34 · 보조 회색 #6B6F7A
+     (#9898A0 는 글자색으로 쓰지 않는다. #2A7FFA·#F25555 위에 흰 글자를 올리지 않는다.) */
+:root {
+  --brand: #3365ff;
+  --brand-tint: #e8eeff;
+  --text: #292c34;
+  --text-2: #6b6f7a;
+  --bg: #ffffff;
+  --line: #d9dde6;
+  --safe: 5%; /* EBU R 95 graphics safe area */
+  /* 16:9 무대 크기 — 아래쪽 고정 줄도 같은 크기에 맞춘다 */
+  --slide-w: min(100vw, calc(100vh * 16 / 9));
+  --slide-h: min(100vh, calc(100vw * 9 / 16));
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--text);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  overflow: hidden;
+  cursor: none; /* 방문객 화면에는 마우스 커서를 보이지 않는다 */
+}
+
+/* 16:9 무대. 화면 비율이 달라도 잘리지 않게 letterbox 한다. */
+.stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--text);
+}
+
+.slide {
+  position: relative;
+  width: var(--slide-w);
+  height: var(--slide-h);
+  background: var(--bg);
+  padding: var(--safe);
+  display: grid;
+  align-content: center;
+  container-type: inline-size;
+}
+
+/* 화면 너비 기준 글자 크기 (3840 에서도 같은 비율) */
+.slide h1 { margin: 0; font-size: 6cqw; line-height: 1.1; letter-spacing: -0.02em; }
+.slide h2 { margin: 0; font-size: 4.4cqw; line-height: 1.15; }
+.slide .sub { margin: 0; font-size: 2.4cqw; color: var(--text-2); line-height: 1.35; }
+.slide ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 1cqw; }
+.slide li { font-size: 2.6cqw; line-height: 1.3; padding-left: 2.4cqw; position: relative; }
+.slide li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 1.1cqw;
+  height: 1.1cqw;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* 한 장의 내용 틀. 어떤 종류든 화면 안에 들어오게 한다. */
+.slide-inner {
+  display: grid;
+  gap: 2cqw;
+  align-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.slide-inner > * { min-width: 0; min-height: 0; }
+
+.cover { grid-template-columns: 1.05fr 1fr; align-items: center; text-align: left; }
+.cover .cover-text { display: grid; gap: 1.4cqw; align-content: center; }
+.cover .brand { font-size: 8cqw; font-weight: 800; color: var(--brand); letter-spacing: -0.03em; margin: 0; }
+.split { grid-template-columns: 1.15fr 1fr; align-items: center; }
+.split .col { display: grid; gap: 1.4cqw; align-content: center; }
+.media {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 1.2cqw;
+  border: 1px solid var(--line);
+  background: var(--brand-tint);
+}
+
+/* 공개 서비스 QR */
+.links { grid-template-columns: 1fr; align-content: center; }
+.link-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4cqw; margin-top: 1.5cqw; }
+.link-card { display: grid; justify-items: center; gap: 1cqw; }
+.link-card img { width: 16cqw; height: 16cqw; background: #fff; border: 1px solid var(--line); border-radius: 1cqw; padding: 0.6cqw; }
+.link-card .label { font-size: 2.2cqw; font-weight: 700; }
+.link-card .url { font-size: 1.6cqw; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* 아래쪽 고정 줄: 로고 · 진행 · 쪽수.
+   흰 화면 위에 올라가므로 밝은 색을 쓰지 않는다(흰 글자 금지). 무대와 같은 16:9 폭에 맞춘다. */
+.chrome {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--slide-w);
+  bottom: calc((100vh - var(--slide-h)) / 2);
+  padding: 0 var(--safe) calc(var(--safe) / 2.2);
+  display: flex;
+  align-items: center;
+  gap: 1.5vw;
+  color: var(--text-2);
+}
+.logo { height: 2vw; width: auto; opacity: 0.9; }
+.progress { flex: 1; height: 0.4vh; min-height: 3px; background: rgba(41, 44, 52, 0.14); border-radius: 999px; overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--brand); }
+.pager { margin: 0; font-size: 1.3vw; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+/* 승인 전 표시 — 계속 보인다 */
+.sample-badge {
+  position: fixed;
+  top: calc(var(--safe) / 2);
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: 5;
+  padding: 0.6vw 1.6vw;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #7a4a00;
+  border: 1px solid #f0d49a;
+  font-size: 1.5vw;
+  font-weight: 700;
+}
+
+/* 목차 */
+.index-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(41, 44, 52, 0.96);
+  color: #fff;
+  padding: var(--safe);
+  display: grid;
+  align-content: start;
+  gap: 1.5vw;
+  overflow: hidden;
+}
+.index-overlay h2 { margin: 0; font-size: 3.4vw; }
+.index-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 1vw; }
+.index-list li { font-size: 2.2vw; padding: 0.6vw 1.2vw; border-radius: 0.8vw; }
+.index-list li[aria-current='true'] { background: var(--brand); font-weight: 700; }
+.hint, .keyhint { color: rgba(255, 255, 255, 0.85); font-size: 1.4vw; margin: 0; }
+/* [hidden] 이 클래스의 display 에 지지 않게 한다 (숨김이 실제로 숨김이어야 한다) */
+.index-overlay[hidden], .sample-badge[hidden], .keyhint[hidden] { display: none; }
+/* 조작 안내는 처음 몇 초만. 승인 전 표시(가운데 위)와 겹치지 않게 아래쪽에 둔다. */
+.keyhint {
+  position: fixed;
+  right: var(--safe);
+  bottom: calc(var(--safe) / 2 + 3.2vw);
+  z-index: 5;
+  background: rgba(41, 44, 52, 0.75);
+  padding: 0.5vw 1.2vw;
+  border-radius: 0.6vw;
+  transition: opacity 0.4s ease;
+}
+
+/* 안전 화면 (저장본이 없거나 깨졌을 때) */
+.safe-screen { align-content: center; justify-items: center; text-align: center; gap: 2.5cqw; }
+.safe-screen img { height: auto; }
+.safe-screen .brand { font-size: 8cqw; font-weight: 800; color: var(--brand); margin: 0; }
+.safe-screen .site { font-size: 3cqw; margin: 0; }
+.safe-screen img { width: 18cqw; height: 18cqw; border: 1px solid var(--line); border-radius: 1cqw; padding: 0.6cqw; background: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .progress span { transition: none; }
+}

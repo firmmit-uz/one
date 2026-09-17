@@ -1,0 +1,177 @@
+{
+  "pages": [
+    {
+      "name": "showroom-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-1920.png"
+    },
+    {
+      "name": "showroom-links-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-links-1920.png"
+    },
+    {
+      "name": "showroom-index-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-index-1920.png"
+    },
+    {
+      "name": "showroom-en-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-en-1920.png"
+    },
+    {
+      "name": "showroom-safe-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-safe-1920.png"
+    },
+    {
+      "name": "showroom-offline-1920",
+      "viewport": "1920x1080",
+      "file": "test/screens/showroom-offline-1920.png"
+    },
+    {
+      "name": "showroom-3840",
+      "viewport": "3840x2160",
+      "file": "test/screens/showroom-3840.png"
+    }
+  ],
+  "checks": [
+    {
+      "name": "첫 화면이 그려진다",
+      "ok": true,
+      "detail": "FIRMMIT"
+    },
+    {
+      "name": "승인 전 표시가 보인다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "쪽수가 보인다",
+      "ok": true,
+      "detail": "1 / 4"
+    },
+    {
+      "name": "자동재생이 다음 장으로 넘어간다",
+      "ok": true,
+      "detail": "1 / 4 → 2 / 4"
+    },
+    {
+      "name": "입력이 들어오면 자동재생이 멈춘다",
+      "ok": true,
+      "detail": "3 / 4 → 3 / 4"
+    },
+    {
+      "name": "→ 키로 다음 장",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "← 키로 이전 장",
+      "ok": true,
+      "detail": "3 / 4 → 2 / 4"
+    },
+    {
+      "name": "멈춘 동안에는 넘어가지 않는다",
+      "ok": true,
+      "detail": "2 / 4"
+    },
+    {
+      "name": "공개 서비스 화면에 QR 3개",
+      "ok": true,
+      "detail": "3"
+    },
+    {
+      "name": "QR 화면에 공개 주소만",
+      "ok": true,
+      "detail": "firmmitmall.com, www.firmmit.kr, t.me/firmmit_global"
+    },
+    {
+      "name": "Home 으로 목차가 열린다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "목차에 게시 항목만 들어 있다",
+      "ok": true,
+      "detail": "4"
+    },
+    {
+      "name": "다시 Home 으로 목차가 닫힌다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "↑↓ 로 언어가 바뀐다",
+      "ok": true,
+      "detail": "en"
+    },
+    {
+      "name": "'작성 중인 항목' 이(가) 화면에 없다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "'만료된 항목' 이(가) 화면에 없다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "'회수된 항목' 이(가) 화면에 없다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "게시 시작 전에는 안전 화면",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "안전 화면에 이메일·전화번호가 없다",
+      "ok": true,
+      "detail": "FIRMMIT\n\nwww.firmmit.kr"
+    },
+    {
+      "name": "브라우저 저장소를 쓰지 않는다",
+      "ok": true,
+      "detail": "{\"localStorage\": 0, \"sessionStorage\": 0, \"cookies\": 0}"
+    },
+    {
+      "name": "외부 네트워크 요청 0건",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "콘솔 오류 0건",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "네트워크가 끊겨도 화면이 뜬다 (서비스 워커 저장본)",
+      "ok": true,
+      "detail": "FIRMMIT"
+    },
+    {
+      "name": "QR 3개가 실제로 그 공개 주소로 읽힌다",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "4K 에서도 16:9 를 지킨다",
+      "ok": true,
+      "detail": "{\"w\": 3840, \"h\": 2160, \"ratio\": 1.778, \"overflowX\": 0}"
+    },
+    {
+      "name": "가로 넘침 없음",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "4K 콘솔 오류 0 · 외부 요청 0",
+      "ok": true,
+      "detail": "[] []"
+    }
+  ],
+  "failures": []
+}

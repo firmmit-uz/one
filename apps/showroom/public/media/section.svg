@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-label="자리표시자 이미지">
+  <rect width="960" height="540" fill="#F4F6FB"/>
+  <g fill="#3365FF" opacity="0.14">
+    <rect x="120" y="150" width="200" height="240" rx="14"/>
+    <rect x="380" y="150" width="200" height="240" rx="14"/>
+    <rect x="640" y="150" width="200" height="240" rx="14"/>
+  </g>
+  <text x="480" y="470" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" fill="#6B6F7A">승인 전 자리표시자 · Placeholder</text>
+</svg>

@@ -1,0 +1,15 @@
+// FIRMMIT ONE TV 쇼룸 — 방문객용 정적 화면 전용 Worker
+// 직원 허브(fm-one-hub)와 배포·데이터·세션을 공유하지 않는다.
+// D1 · Access · 쿠키 · 비밀값 없음. 코드에서 허브 API 를 부르지 않는다.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "fm-one-showroom",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

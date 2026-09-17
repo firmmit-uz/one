@@ -1,0 +1,19 @@
+{
+  "name": "@firmmit-one/showroom",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "FIRMMIT ONE TV 쇼룸 (방문객용, 직원 허브와 완전 분리)",
+  "scripts": {
+    "build": "node scripts/build-content.mjs",
+    "check": "node scripts/check-content.mjs",
+    "test": "node scripts/check-content.mjs && node test/content.test.mjs",
+    "test:ui": "python3 test/ui_showroom.py",
+    "dev": "wrangler dev",
+    "build:dry": "npm run build && wrangler deploy --dry-run --outdir dist"
+  },
+  "devDependencies": {
+    "qrcode-generator": "^1.5.0",
+    "wrangler": "^4.133.0"
+  }
+}

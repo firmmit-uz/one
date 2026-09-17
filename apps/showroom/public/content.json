@@ -1,0 +1,212 @@
+{
+  "manifest_version": "1.0",
+  "built_at": "2026-09-17",
+  "release": {
+    "status": "sample",
+    "note": {
+      "ko": "샘플 — 승인 전",
+      "en": "SAMPLE — not approved"
+    }
+  },
+  "languages": [
+    "ko",
+    "en"
+  ],
+  "default_language": "ko",
+  "autoplay_seconds": 15,
+  "idle_resume_seconds": 60,
+  "links": [
+    {
+      "id": "mall",
+      "url": "https://firmmitmall.com",
+      "label": {
+        "ko": "퍼밋몰",
+        "en": "FIRMMIT Mall"
+      },
+      "qr": "media/qr-mall.svg"
+    },
+    {
+      "id": "kr",
+      "url": "https://www.firmmit.kr",
+      "label": {
+        "ko": "한국 홈페이지",
+        "en": "Korea website"
+      },
+      "qr": "media/qr-kr.svg"
+    },
+    {
+      "id": "telegram",
+      "url": "https://t.me/firmmit_global",
+      "label": {
+        "ko": "텔레그램 공개 채널",
+        "en": "Telegram channel"
+      },
+      "qr": "media/qr-telegram.svg"
+    }
+  ],
+  "safe_screen": [
+    {
+      "url": "https://www.firmmit.kr",
+      "qr": "media/qr-kr.svg"
+    },
+    {
+      "url": "https://t.me/firmmit_global",
+      "qr": "media/qr-telegram.svg"
+    }
+  ],
+  "items": [
+    {
+      "id": "S01",
+      "type": "cover",
+      "status": "published",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "FIRMMIT",
+        "en": "FIRMMIT"
+      },
+      "subtitle": {
+        "ko": "여기에 승인된 회사 소개 한 문장을 넣습니다",
+        "en": "Approved one-line company introduction goes here"
+      },
+      "media": "media/cover.svg"
+    },
+    {
+      "id": "S02",
+      "type": "section",
+      "status": "published",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "사업 영역",
+        "en": "What we do"
+      },
+      "subtitle": {
+        "ko": "승인 전 자리표시자입니다",
+        "en": "Placeholder until approved"
+      },
+      "body": {
+        "ko": [
+          "스마트팜 구축 — 승인된 설명으로 바꿉니다",
+          "재배 기술 — 승인된 설명으로 바꿉니다",
+          "농자재·농산물 유통 — 승인된 설명으로 바꿉니다",
+          "해외 사업 — 승인된 설명으로 바꿉니다"
+        ],
+        "en": [
+          "Smart farm construction — replace with approved copy",
+          "Cultivation technology — replace with approved copy",
+          "Agricultural supply and produce — replace with approved copy",
+          "Overseas business — replace with approved copy"
+        ]
+      },
+      "media": "media/section.svg"
+    },
+    {
+      "id": "S03",
+      "type": "section",
+      "status": "published",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "사례",
+        "en": "Case study"
+      },
+      "subtitle": {
+        "ko": "실제 사진·수치는 승인 뒤에 넣습니다",
+        "en": "Real photos and figures are added after approval"
+      },
+      "body": {
+        "ko": [
+          "규모 — 승인 전",
+          "기간 — 승인 전",
+          "구성 — 승인 전"
+        ],
+        "en": [
+          "Scale — pending approval",
+          "Period — pending approval",
+          "Scope — pending approval"
+        ]
+      },
+      "media": "media/case.svg"
+    },
+    {
+      "id": "S04",
+      "type": "links",
+      "status": "published",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "공개 서비스",
+        "en": "Public services"
+      },
+      "subtitle": {
+        "ko": "휴대폰으로 QR 을 찍으면 열립니다",
+        "en": "Scan the QR code with your phone"
+      },
+      "links": [
+        "mall",
+        "kr",
+        "telegram"
+      ]
+    },
+    {
+      "id": "S05",
+      "type": "section",
+      "status": "draft",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "작성 중인 항목 (화면에 나오지 않음)",
+        "en": "Draft item (not shown)"
+      },
+      "subtitle": {
+        "ko": "status 가 draft 라 표시되지 않습니다",
+        "en": "Hidden because status is draft"
+      }
+    },
+    {
+      "id": "S06",
+      "type": "section",
+      "status": "published",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2026-01-02",
+      "title": {
+        "ko": "만료된 항목 (화면에 나오지 않음)",
+        "en": "Expired item (not shown)"
+      },
+      "subtitle": {
+        "ko": "게시 기간이 지나 표시되지 않습니다",
+        "en": "Hidden because the publish window ended"
+      }
+    },
+    {
+      "id": "S07",
+      "type": "section",
+      "status": "withdrawn",
+      "approved_by": "SAMPLE",
+      "approved_at": null,
+      "publish_from": "2026-01-01",
+      "expires_at": "2099-12-31",
+      "title": {
+        "ko": "회수된 항목 (화면에 나오지 않음)",
+        "en": "Withdrawn item (not shown)"
+      },
+      "subtitle": {
+        "ko": "회수되어 표시되지 않습니다",
+        "en": "Hidden because it was withdrawn"
+      }
+    }
+  ]
+}
