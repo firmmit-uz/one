@@ -1,6 +1,6 @@
 # FIRMMIT ONE — 코드 리뷰 요청서 (GPT 용)
 
-작성 2026-09-17 (2판) · 대상 커밋 `<COMMIT>` · 저장소 <https://github.com/firmmit-uz/one> (branch `firmmit/brave-bardeen-0nolbj`)
+작성 2026-09-17 (2판) · 대상 커밋 `362e3da` · 저장소 <https://github.com/firmmit-uz/one> (branch `firmmit/brave-bardeen-0nolbj`)
 
 > **한 줄 요청** — Phase 1.5(WP1–WP4)로 새로 쓴 코드 약 3,000줄에서 **실제로 깨지는 것**을 찾아 달라.
 > 취향·스타일 의견은 받지 않는다. "이 입력에서 이렇게 틀린다"를 쓸 수 있는 것만 달라.
@@ -61,7 +61,7 @@
 ## 2. 재현 방법
 
 ```bash
-git clone https://github.com/firmmit-uz/one && cd one && git checkout <COMMIT>
+git clone https://github.com/firmmit-uz/one && cd one && git checkout 362e3da
 node -v                               # v22.13 이상 (확인 시점 v22.22.2)
 npm ci
 export WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false
@@ -78,7 +78,10 @@ npm test -w apps/showroom             # 38/38
 화면 시험(`npm run test:ui`)은 Python Playwright + `opencv-python-headless` 가 필요하다. 리뷰에 필수는 아니다.
 
 **전달물 ZIP** `FIRMMIT_ONE_WP1-WP4_2026-09-17.zip`
-SHA-256 `<ZIPHASH>` (148개 추적 파일, `git archive <COMMIT>`)
+SHA-256 `15695bddea1d11f84941d5165223510eddf584e501c18014dfa13d3e563b9fcd` (148개 추적 파일, `git archive 362e3da`)
+
+> 이 문서 자체는 `362e3da` 다음 커밋에 들어 있다(커밋 해시를 문서에 적으려면 그래야 한다).
+> **코드는 `362e3da` 가 전부다** — 그 뒤로 바뀐 것은 이 문서뿐이다.
 
 ---
 
