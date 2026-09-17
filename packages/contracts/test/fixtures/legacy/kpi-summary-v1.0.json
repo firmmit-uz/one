@@ -1,0 +1,158 @@
+
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://one.firmmit.com/schemas/kpi-summary/1.0.json",
+  "title": "FIRMMIT ONE KPI Summary Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "generated_at", "source", "kpis"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "request_id": { "type": "string", "minLength": 8, "maxLength": 64 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "source_version"],
+      "properties": {
+        "system": {
+          "enum": ["nongjajae", "quote", "icheon", "akis", "amim", "fino", "apply",
+                   "cafe24", "smartstore", "uz_web", "kr_web", "band_bridge",
+                   "kakao_bot", "freshness", "one"]
+        },
+        "source_version": { "type": "string", "description": "앱 버전 예: 18.24.2, 4.6.1" },
+        "data_version": { "type": "string", "description": "데이터·규칙 버전 예: PRICE_VER 19.0, registry v17, X-Cafe24-Api-Version 2026-09-01" },
+        "environment": { "enum": ["production", "staging"] }
+      }
+    },
+    "kpis": { "type": "array", "items": { "$ref": "#/$defs/kpi" } }
+  },
+  "$defs": {
+    "kpi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kpi_id", "definition_version", "status", "measure", "period", "updated_at"],
+      "properties": {
+        "kpi_id": { "type": "string", "pattern": "^[A-Z]{2,4}\\.[A-Z0-9_]{3,40}$" },
+        "definition_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+        "status": { "enum": ["ok", "stale", "partial", "error", "unavailable"] },
+        "measure": { "$ref": "#/$defs/measure" },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "tz"],
+          "properties": {
+            "type": { "enum": ["instant", "day", "mtd", "ytd", "month", "rolling_24h", "rolling_7d", "rolling_30d", "season"] },
+            "start": { "type": "string", "format": "date" },
+            "end": { "type": "string", "format": "date" },
+            "tz": { "enum": ["Asia/Seoul", "Asia/Tashkent", "UTC"] },
+            "season_id": { "type": "string" }
+          }
+        },
+        "updated_at": { "type": "string", "format": "date-time", "description": "소스가 이 값을 계산한 시각" },
+        "data_as_of": { "type": ["string", "null"], "description": "데이터 안의 최신 업무일(워터마크). date 또는 date-time" },
+        "freshness_hint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "monitor": { "enum": ["freshness_build", "none"] },
+            "verdict": { "enum": ["HEALTHY", "STALE", "UNKNOWN", null] },
+            "consumer_id": { "type": "string" },
+            "evaluated_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "quality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level"],
+          "properties": {
+            "level": { "enum": ["verified", "unverified", "estimated"] },
+            "flags": {
+              "type": "array",
+              "items": { "enum": [
+                "DEFINITION_PENDING", "ESTIMATED_COST_RATIO", "EXCLUDES_BLANK_PRODUCT_ROWS",
+                "UNDERCOUNT_CLIENT_NOT_CONFIGURED", "PUBLIC_WRITE_NOISE", "PARTIAL_CHANNELS",
+                "OUT_OF_SEASON", "MANUAL_ENTRY", "ANOMALY_SALES_GT_HARVEST"
+              ] }
+            },
+            "coverage": { "type": "number", "minimum": 0, "maximum": 1, "description": "수집 성공 비율(채널 3개 중 2개 = 0.667)" }
+          }
+        },
+        "breakdown": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "measure"],
+            "properties": {
+              "key": { "type": "string", "description": "코드값(예: UZ, 수주, zone:A). 표시 문구는 ONE i18n" },
+              "measure": { "$ref": "#/$defs/measure" }
+            }
+          }
+        },
+        "compare": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "previous": { "$ref": "#/$defs/measure" },
+            "previous_period": { "type": "string", "description": "예: 2026-08-01/2026-08-16" },
+            "target": { "$ref": "#/$defs/measure" },
+            "target_source": { "type": "string" }
+          }
+        },
+        "fx": {
+          "type": "object",
+          "description": "환산값을 함께 보낼 때만. 환산값은 항상 참고용",
+          "additionalProperties": false,
+          "required": ["base", "quote", "rate", "as_of", "provider"],
+          "properties": {
+            "base": { "enum": ["USD"] },
+            "quote": { "enum": ["KRW", "UZS"] },
+            "rate": { "type": "number", "exclusiveMinimum": 0 },
+            "as_of": { "type": "string", "format": "date" },
+            "provider": { "enum": ["CBU", "exchangerate.host", "static"] }
+          }
+        },
+        "sensitivity": { "enum": ["internal", "department", "finance", "personal"] },
+        "drilldown_app": { "type": "string", "description": "런처 앱 ID(새 탭). URL은 ONE이 조립" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "retryable"],
+          "properties": {
+            "code": { "enum": ["SOURCE_TIMEOUT", "SOURCE_AUTH", "SOURCE_RATE_LIMIT", "SOURCE_SCHEMA",
+                               "UPSTREAM_DOWN", "NOT_IMPLEMENTED", "DEFINITION_PENDING", "DATA_NOT_CENTRALIZED"] },
+            "retryable": { "type": "boolean" },
+            "last_success_at": { "type": ["string", "null"], "format": "date-time" },
+            "detail": { "type": "string", "maxLength": 200, "description": "비밀값·개인정보 금지" }
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "error" } } }, "then": { "required": ["error"] } },
+        { "if": { "properties": { "status": { "const": "unavailable" } } }, "then": { "required": ["error"] } }
+      ]
+    },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "unit"],
+      "properties": {
+        "kind": { "enum": ["money", "count", "ratio", "quantity", "timestamp", "state"] },
+        "value": { "type": ["number", "string", "null"], "description": "null=미측정(0과 구분). money는 최소단위 정수" },
+        "unit": { "enum": ["KRW", "USD", "UZS", "count", "percent", "kg", "g", "mS/cm", "pH",
+                           "Brix", "N", "mm", "cm", "day", "hour", "second", "person", "state"] },
+        "currency": { "enum": ["KRW", "USD", "UZS"] },
+        "minor_exponent": { "enum": [0, 2], "description": "ISO 4217: KRW 0, USD 2, UZS 2" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "converted": { "type": "boolean", "default": false }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "money" } } },
+          "then": { "required": ["currency", "minor_exponent"],
+                    "properties": { "value": { "type": ["integer", "null"] } } } }
+      ]
+    }
+  }
+}

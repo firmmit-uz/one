@@ -1,0 +1,346 @@
+// 관리 API (허브 ADMIN 전용, 모든 변경은 감사기록과 같은 트랜잭션)
+import { Hono } from 'hono';
+import type { HubEnv } from './app';
+import { runAudited, verifyAuditChain, type AuditRow } from './audit';
+import { grantState, isSnapshotStale, type CeilingRow, type GrantRow } from './authz';
+import { GROUP_SYNC_KEY, HUB_APP_ID } from './env';
+import {
+  isAutoSyncEnabled,
+  loadSnapshotRows,
+  loadSyncState,
+  LOCKOUT_GROUPS,
+  nextGroupSyncAt,
+  snapshotDiff,
+  snapshotReplaceStmts,
+} from './groupsync';
+import { ApiError, errorIncludes, jsonError } from './http';
+import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
+
+const GROUP_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+const SCOPE_RE = /^[A-Za-z0-9_.:*-]{1,64}$/;
+const EMP_RE = /^[A-Za-z0-9_.-]{1,32}$/;
+const ID_RE = /^[1-9][0-9]{0,15}$/;
+
+const reason = { v: str({ max: 500 }), optional: true } as const;
+
+export function adminRoutes() {
+  const r = new Hono<HubEnv>();
+
+  // ADMIN 확인 (서버가 최종 판정)
+  r.use('*', async (c, next) => {
+    if (!c.get('principal').isHubAdmin) return jsonError(c, 403, 'forbidden', 'Administrator role required');
+    await next();
+  });
+
+  r.get('/users', async (c) => {
+    const db = c.env.DB;
+    const now = c.get('now');
+    const [users, grants, snap, ceilings, apps, sync] = await db.batch([
+      db.prepare('SELECT email, emp_id, display_name, status, created_at FROM users ORDER BY email LIMIT 2000'),
+      db.prepare('SELECT * FROM role_grants ORDER BY id'),
+      db.prepare('SELECT group_name, email FROM access_group_snapshot ORDER BY group_name, email'),
+      db.prepare('SELECT group_name, app_id, max_role FROM group_ceiling ORDER BY group_name, app_id'),
+      db.prepare('SELECT app_id, name_ko, name_uz, name_ru, kind, status FROM app_registry ORDER BY sort, app_id'),
+      db.prepare('SELECT last_success_at FROM sync_state WHERE key = ?').bind(GROUP_SYNC_KEY),
+    ]);
+    const syncState = await loadSyncState(db);
+    const auto = isAutoSyncEnabled(c.env);
+    const snapRows = (snap?.results ?? []) as { group_name: string; email: string }[];
+    const ceilingRows = (ceilings?.results ?? []) as unknown as CeilingRow[];
+    const groupsByEmail = new Map<string, string[]>();
+    const membersByGroup = new Map<string, string[]>();
+    for (const s of snapRows) {
+      groupsByEmail.set(s.email, [...(groupsByEmail.get(s.email) ?? []), s.group_name]);
+      membersByGroup.set(s.group_name, [...(membersByGroup.get(s.group_name) ?? []), s.email]);
+    }
+    const grantsByEmail = new Map<string, GrantRow[]>();
+    for (const g of (grants?.results ?? []) as unknown as GrantRow[]) {
+      grantsByEmail.set(g.email, [...(grantsByEmail.get(g.email) ?? []), g]);
+    }
+    const syncedAt = ((sync?.results?.[0] ?? null) as { last_success_at: string } | null)?.last_success_at ?? null;
+    return c.json({
+      users: ((users?.results ?? []) as { email: string }[]).map((u) => {
+        const groups = groupsByEmail.get(u.email) ?? [];
+        const gs = new Set(groups);
+        return {
+          ...u,
+          groups,
+          grants: (grantsByEmail.get(u.email) ?? []).map((g) => ({ ...g, state: grantState(g, ceilingRows, gs, now) })),
+        };
+      }),
+      apps: [
+        { app_id: HUB_APP_ID, name_ko: 'FIRMMIT ONE 허브', name_uz: 'FIRMMIT ONE hub', name_ru: 'Хаб FIRMMIT ONE', kind: 'hub', status: 'active' },
+        ...((apps?.results ?? []) as object[]),
+      ],
+      ceilings: ceilingRows,
+      snapshot: {
+        synced_at: syncedAt,
+        stale: isSnapshotStale(syncedAt, now),
+        groups: [...membersByGroup.entries()].map(([group_name, emails]) => ({ group_name, emails })),
+        // WP1: 자동 동기화 상태 (자동 모드가 아니면 수동 입력만 쓴다)
+        sync: {
+          auto,
+          next_run_at: auto ? nextGroupSyncAt(now) : null,
+          last_attempt_at: syncState?.last_attempt_at ?? null,
+          last_outcome: syncState?.last_outcome ?? null,
+          last_failure_code: syncState?.last_failure_code ?? null,
+          last_failure_at: syncState?.last_failure_at ?? null,
+          consecutive_failures: syncState?.consecutive_failures ?? 0,
+        },
+      },
+    });
+  });
+
+  // 직원 등록
+  r.post('/users', async (c) => {
+    const body = objectOf({
+      email: { v: email },
+      display_name: { v: str({ max: 100 }) },
+      emp_id: { v: str({ max: 32, pattern: EMP_RE }), optional: true, nullable: true },
+      reason,
+    })(await readJsonBody(c.req.raw), '');
+    const db = c.env.DB;
+    const exists = await db.prepare('SELECT 1 AS x FROM users WHERE email = ?').bind(body.email).first();
+    if (exists) throw new ApiError(409, 'already_exists', 'User already exists');
+    const now = c.get('now').toISOString();
+    const actor = c.get('principal').email;
+    try {
+      await runAudited(db, async () => ({
+        stmts: [
+          db
+            .prepare("INSERT INTO users (email, emp_id, display_name, status, created_at) VALUES (?, ?, ?, 'active', ?)")
+            .bind(body.email, body.emp_id ?? null, body.display_name, now),
+        ],
+        entry: {
+          ts: now,
+          actor_email: actor,
+          action: 'user_create',
+          target: `user:${body.email}`,
+          detail: { emp_id: body.emp_id ?? null, display_name: body.display_name, reason: body.reason ?? null },
+          request_id: c.get('requestId'),
+        },
+      }));
+    } catch (err) {
+      if (errorIncludes(err, 'UNIQUE constraint failed')) throw new ApiError(409, 'already_exists', 'User or employee ID already exists');
+      throw err;
+    }
+    return c.json({ user: { email: body.email, emp_id: body.emp_id ?? null, display_name: body.display_name, status: 'active', created_at: now } }, 201);
+  });
+
+  // 직원 상태 변경
+  r.post('/users/:email/status', async (c) => {
+    const target = email(c.req.param('email'), 'email');
+    const body = objectOf({ status: { v: oneOf(['active', 'suspended', 'revoked'] as const) }, reason })(
+      await readJsonBody(c.req.raw),
+      '',
+    );
+    const actor = c.get('principal').email;
+    if (target === actor && body.status !== 'active') throw new ApiError(409, 'self_lockout', 'Cannot deactivate your own account');
+    const db = c.env.DB;
+    const cur = await db.prepare('SELECT status FROM users WHERE email = ?').bind(target).first<{ status: string }>();
+    if (!cur) throw new ApiError(404, 'not_found', 'User not found');
+    if (cur.status === body.status) throw new ApiError(409, 'no_change', 'Status unchanged');
+    const now = c.get('now').toISOString();
+    await runAudited(db, async () => ({
+      stmts: [db.prepare('UPDATE users SET status = ? WHERE email = ?').bind(body.status, target)],
+      entry: {
+        ts: now,
+        actor_email: actor,
+        action: 'user_status_change',
+        target: `user:${target}`,
+        detail: { from: cur.status, to: body.status, reason: body.reason ?? null },
+        request_id: c.get('requestId'),
+      },
+    }));
+    return c.json({ email: target, status: body.status });
+  });
+
+  // 역할 부여
+  r.post('/grants', async (c) => {
+    const body = objectOf({
+      email: { v: email },
+      app_id: { v: str({ min: 2, max: 64, pattern: /^[a-z0-9-]+$/ }) },
+      role: { v: role },
+      scope: { v: str({ max: 64, pattern: SCOPE_RE }), optional: true },
+      expires_at: { v: futureIsoUtc(() => c.get('now')), optional: true, nullable: true },
+      reason,
+    })(await readJsonBody(c.req.raw), '');
+    const db = c.env.DB;
+    const [u, a] = await db.batch([
+      db.prepare('SELECT email, status FROM users WHERE email = ?').bind(body.email),
+      db.prepare('SELECT app_id FROM app_registry WHERE app_id = ?').bind(body.app_id),
+    ]);
+    if (!u?.results?.[0]) throw new ApiError(404, 'user_not_found', 'User not found');
+    if (body.app_id !== HUB_APP_ID && !a?.results?.[0]) throw new ValidationError('unknown_app', 'app_id');
+
+    const now = c.get('now').toISOString();
+    const actor = c.get('principal').email;
+    const scope = body.scope ?? '*';
+    const expires = body.expires_at ?? null;
+    let grantId = 0;
+    await runAudited(
+      db,
+      async () => {
+        const row = await db.prepare('SELECT COALESCE(MAX(id), 0) + 1 AS next FROM role_grants').first<{ next: number }>();
+        grantId = row?.next ?? 1;
+        return {
+          stmts: [
+            db
+              .prepare(
+                'INSERT INTO role_grants (id, email, app_id, role, scope, expires_at, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              )
+              .bind(grantId, body.email, body.app_id, body.role, scope, expires, actor, now),
+          ],
+          entry: {
+            ts: now,
+            actor_email: actor,
+            action: 'grant_create',
+            target: `grant:${grantId}`,
+            detail: { email: body.email, app_id: body.app_id, role: body.role, scope, expires_at: expires, reason: body.reason ?? null },
+            request_id: c.get('requestId'),
+          },
+        };
+      },
+      { retryOn: ['role_grants.id'] },
+    );
+
+    // 상한 초과 여부를 바로 알려줌
+    const [grp, ceil] = await db.batch([
+      db.prepare('SELECT group_name FROM access_group_snapshot WHERE email = ?').bind(body.email),
+      db.prepare('SELECT group_name, app_id, max_role FROM group_ceiling'),
+    ]);
+    const groups = new Set(((grp?.results ?? []) as { group_name: string }[]).map((g) => g.group_name));
+    const grant: GrantRow = {
+      id: grantId,
+      email: body.email,
+      app_id: body.app_id,
+      role: body.role,
+      scope,
+      expires_at: expires,
+      granted_by: actor,
+      granted_at: now,
+      revoked_at: null,
+      revoked_by: null,
+    };
+    const state = grantState(grant, (ceil?.results ?? []) as unknown as CeilingRow[], groups, c.get('now'));
+    return c.json({ grant: { ...grant, state } }, 201);
+  });
+
+  // 역할 회수
+  r.post('/grants/:id/revoke', async (c) => {
+    const idText = c.req.param('id');
+    if (!ID_RE.test(idText)) throw new ValidationError('invalid_id', 'id');
+    const id = Number(idText);
+    const body = objectOf({ reason })(await readJsonBody(c.req.raw), '');
+    const db = c.env.DB;
+    const g = await db.prepare('SELECT * FROM role_grants WHERE id = ?').bind(id).first<GrantRow>();
+    if (!g) throw new ApiError(404, 'not_found', 'Grant not found');
+    if (g.revoked_at !== null) throw new ApiError(409, 'already_revoked', 'Grant already revoked');
+    const actor = c.get('principal').email;
+    if (g.email === actor && g.app_id === HUB_APP_ID && g.role === 'ADMIN') {
+      throw new ApiError(409, 'self_lockout', 'Cannot revoke your own administrator grant');
+    }
+    const now = c.get('now').toISOString();
+    try {
+      await runAudited(db, async () => ({
+        stmts: [db.prepare('UPDATE role_grants SET revoked_at = ?, revoked_by = ? WHERE id = ?').bind(now, actor, id)],
+        entry: {
+          ts: now,
+          actor_email: actor,
+          action: 'grant_revoke',
+          target: `grant:${id}`,
+          detail: { email: g.email, app_id: g.app_id, role: g.role, scope: g.scope, reason: body.reason ?? null },
+          request_id: c.get('requestId'),
+        },
+      }));
+    } catch (err) {
+      // 동시 회수 경합: 트리거가 두 번째 회수를 막음
+      if (errorIncludes(err, 'role_grants_revoke_only')) throw new ApiError(409, 'already_revoked', 'Grant already revoked');
+      throw err;
+    }
+    return c.json({ id, revoked_at: now, revoked_by: actor });
+  });
+
+  // 그룹 사본 수동 입력: 전체 교체.
+  // 자동 동기화가 설정돼 있으면 거부한다 — 수동 입력이 sync_state 를 갱신해
+  // 자동 동기화 실패를 가리는 것을 막기 위해서다 (WP1).
+  r.post('/group-snapshot', async (c) => {
+    if (isAutoSyncEnabled(c.env)) {
+      throw new ApiError(409, 'auto_sync_enabled', 'Automatic group sync is enabled; manual replacement is disabled');
+    }
+    const body = objectOf({
+      groups: {
+        v: arrayOf(
+          objectOf({
+            group_name: { v: str({ max: 64, pattern: GROUP_RE }) },
+            emails: { v: arrayOf(email, { min: 1, max: 2000, unique: true }) },
+          }),
+          { min: 1, max: 100 },
+        ),
+      },
+      reason,
+    })(await readJsonBody(c.req.raw), '');
+    const names = body.groups.map((g) => g.group_name);
+    if (new Set(names).size !== names.length) throw new ValidationError('duplicate_value', 'groups.group_name');
+    const actor = c.get('principal').email;
+    // 자기 자신이 관리 그룹에서 빠지면 잠김 → 거부
+    const keepsAccess = body.groups.some(
+      (g) => (LOCKOUT_GROUPS as readonly string[]).includes(g.group_name) && g.emails.includes(actor),
+    );
+    if (!keepsAccess) throw new ApiError(409, 'self_lockout', 'You must remain in ADMIN or BREAKGLASS group');
+
+    const db = c.env.DB;
+    const now = c.get('now').toISOString();
+    const members = new Set(body.groups.flatMap((g) => g.emails.map((e) => `${g.group_name}\t${e}`))).size;
+    // 사본 교체 SQL 은 자동 동기화와 공용 (검사 규칙은 서로 다르다)
+    await runAudited(db, async () => {
+      const diff = snapshotDiff(await loadSnapshotRows(db), body.groups);
+      return {
+        stmts: snapshotReplaceStmts(db, body.groups, now),
+        entry: {
+          ts: now,
+          actor_email: actor,
+          action: 'group_snapshot_replace',
+          target: 'access_group_snapshot',
+          detail: {
+            source: 'manual',
+            groups: body.groups.map((g) => ({ group_name: g.group_name, count: g.emails.length })),
+            added: diff.added,
+            removed: diff.removed,
+            truncated: diff.truncated,
+            reason: body.reason ?? null,
+          },
+          request_id: c.get('requestId'),
+        },
+      };
+    });
+    return c.json({ synced_at: now, groups: body.groups.length, members });
+  });
+
+  r.get('/audit', async (c) => {
+    const q = c.req.query();
+    for (const k of Object.keys(q)) if (k !== 'limit' && k !== 'before') throw new ValidationError('unknown_field', k);
+    let limit = 100;
+    if (q.limit !== undefined) {
+      if (!/^[1-9][0-9]{0,2}$/.test(q.limit) || Number(q.limit) > 500) throw new ValidationError('invalid_value', 'limit');
+      limit = Number(q.limit);
+    }
+    let before = Number.MAX_SAFE_INTEGER;
+    if (q.before !== undefined) {
+      if (!ID_RE.test(q.before)) throw new ValidationError('invalid_value', 'before');
+      before = Number(q.before);
+    }
+    const res = await c.env.DB.prepare(
+      'SELECT id, ts, actor_email, action, target, detail_json, request_id, prev_hash, row_hash FROM audit_log WHERE id < ? ORDER BY id DESC LIMIT ?',
+    )
+      .bind(before, limit)
+      .all<AuditRow>();
+    return c.json({
+      entries: (res.results ?? []).map(({ detail_json, ...rest }) => ({ ...rest, detail: JSON.parse(detail_json) as unknown })),
+    });
+  });
+
+  r.get('/audit/verify', async (c) => c.json(await verifyAuditChain(c.env.DB)));
+
+  return r;
+}

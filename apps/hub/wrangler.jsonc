@@ -1,0 +1,60 @@
+// FIRMMIT ONE 허브 v1 — Cloudflare Worker 설정
+// 자리표시자(<...>)는 배포 담당자가 README 배포 안내서에 따라 채움. 비밀값은 넣지 않음.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "fm-one-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fm-one-hub",
+      "database_id": "<D1_DATABASE_ID>",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "ACCESS_TEAM": "<TEAM>",
+    "ACCESS_AUD": "<AUD>",
+    "ALLOWED_ORIGIN": "https://<허브 주소>",
+    // WP1 그룹 동기화. 비워 두거나 자리표시자면 자동 동기화를 실행하지 않고 수동 입력을 쓴다.
+    // 짝이 되는 CF_API_TOKEN 은 Worker Secret (읽기 전용 권한만) — 여기에 넣지 않는다.
+    "CF_ACCOUNT_ID": "<CF_ACCOUNT_ID>"
+  },
+  // */5 가용성 점검 · */15 Access 그룹 동기화 (계정 합계는 README 참고)
+  "triggers": {
+    "crons": ["*/5 * * * *", "*/15 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "development": {
+      "name": "fm-one-hub-dev",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "fm-one-hub-dev",
+          "database_id": "<D1_DATABASE_ID_DEV>",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "development",
+        "ACCESS_TEAM": "<TEAM>",
+        "ACCESS_AUD": "<AUD>",
+        "ALLOWED_ORIGIN": "http://localhost:8787",
+        "DEV_FAKE_IDENTITY": "dev-admin@example.invalid"
+      },
+      "triggers": {
+        "crons": []
+      }
+    }
+  }
+}

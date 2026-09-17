@@ -1,0 +1,26 @@
+{
+  "name": "@firmmit-one/hub",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "FIRMMIT ONE 허브 v1 (Cloudflare Worker)",
+  "scripts": {
+    "dev": "wrangler dev --env development",
+    "test": "vitest run",
+    "test:mutation": "node test/mutation.mjs",
+    "test:ui": "python3 test/ui_screens.py",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "build:dry": "wrangler deploy --dry-run --outdir dist --env=\"\""
+  },
+  "dependencies": {
+    "hono": "^4.13.8",
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260916.1",
+    "@types/node": "^22.20.3",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1",
+    "wrangler": "^4.133.0"
+  }
+}

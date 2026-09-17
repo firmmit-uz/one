@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>FIRMMIT ONE 허브</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip_link">본문으로 건너뛰기</a>
+  <header class="topbar">
+    <div class="topbar-row">
+      <a class="brand" href="#/home">
+        <span class="brand-name">FIRMMIT ONE</span>
+        <span class="brand-sub" data-i18n="hub">허브</span>
+      </a>
+      <img class="logo" src="/logo.svg" alt="FIRMMIT" width="128" height="22">
+    </div>
+    <div class="nav-row">
+      <nav class="tabs" aria-label="Main">
+        <a class="tab" href="#/home" data-route="home" data-i18n="nav_home">홈</a>
+        <a class="tab" href="#/status" data-route="status" data-i18n="nav_status">시스템 상태</a>
+        <a class="tab" href="#/me" data-route="me" data-i18n="nav_me">내 정보</a>
+        <a class="tab" href="#/admin" data-route="admin" data-i18n="nav_admin" hidden>관리</a>
+      </nav>
+      <div class="session">
+        <label class="lang">
+          <span class="visually-hidden" data-i18n="language">언어</span>
+          <select id="lang-select">
+            <option value="ko">한국어</option>
+            <option value="uz-Latn">Oʻzbekcha</option>
+            <option value="ru">Русский</option>
+          </select>
+        </label>
+        <span class="who" id="who"></span>
+        <a class="logout" href="/cdn-cgi/access/logout" data-i18n="logout">로그아웃</a>
+      </div>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <p class="loading" data-i18n="loading">불러오는 중…</p>
+  </main>
+  <div class="toast-region" id="toast" role="status" aria-live="polite"></div>
+  <footer class="footer"><span data-i18n="footer_note">FIRMMIT ONE 허브 v1</span></footer>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.2",
+  "request_id": "r-7f3c9a1e",
+  "generated_at": "2026-10-05T23:10:04Z",
+  "source": { "system": "quote", "source_version": "18.24.2", "data_version": "PRICE_VER 19.0", "environment": "production" },
+  "kpis": [{
+    "kpi_id": "GH.PIPELINE_VALUE",
+    "definition_version": "1.0",
+    "status": "ok",
+    "measure": { "kind": "money", "value": 1452313905, "unit": "KRW", "currency": "KRW", "minor_exponent": 0 },
+    "period": { "type": "instant", "tz": "Asia/Seoul" },
+    "updated_at": "2026-10-05T23:10:03Z",
+    "data_as_of": "2026-10-05",
+    "quality": { "level": "verified", "flags": [] },
+    "breakdown": [
+      { "key": "status:가견적", "measure": { "kind": "count", "value": 4, "unit": "count" } },
+      { "key": "status:협상", "measure": { "kind": "count", "value": 1, "unit": "count" } },
+      { "key": "converted:USD", "measure": { "kind": "money", "value": 106935610, "unit": "USD", "currency": "USD", "minor_exponent": 2, "converted": true } }
+    ],
+    "fx": { "base": "USD", "quote": "KRW", "rate": 1358.12, "as_of": "2026-10-05", "provider": "CBU" },
+    "sensitivity": "department",
+    "drilldown_app": "quote-backoffice"
+  }]
+}

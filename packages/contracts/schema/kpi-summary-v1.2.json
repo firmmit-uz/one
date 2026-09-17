@@ -1,0 +1,1114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://one.firmmit.com/schemas/kpi-summary/1.2.json",
+  "title": "FIRMMIT ONE KPI Summary Envelope v1.2",
+  "$comment": "스키마만으로 못 막는 조건(원문 정수 표기·kpi_id 중복·환산 통화·시각 순서·비교값 종류·오류 시 null·money decimals·personal)은 @firmmit-one/contracts src/validate.mjs가 검사한다. 각 allOf 항목의 $comment는 규칙 ID.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "generated_at",
+    "source",
+    "kpis"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.2"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "source_version"
+      ],
+      "properties": {
+        "system": {
+          "enum": [
+            "nongjajae",
+            "quote",
+            "icheon",
+            "akis",
+            "amim",
+            "fino",
+            "apply",
+            "cafe24",
+            "smartstore",
+            "uz_web",
+            "kr_web",
+            "band_bridge",
+            "kakao_bot",
+            "freshness",
+            "one"
+          ]
+        },
+        "source_version": {
+          "type": "string",
+          "description": "앱 버전 예: 18.24.2, 4.6.1"
+        },
+        "data_version": {
+          "type": "string",
+          "description": "데이터·규칙 버전 예: PRICE_VER 19.0, registry v17, X-Cafe24-Api-Version 2026-09-01"
+        },
+        "environment": {
+          "enum": [
+            "production",
+            "staging"
+          ]
+        }
+      }
+    },
+    "kpis": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/kpi"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "kpi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kpi_id",
+        "definition_version",
+        "status",
+        "measure",
+        "period",
+        "updated_at",
+        "data_as_of"
+      ],
+      "properties": {
+        "kpi_id": {
+          "type": "string",
+          "pattern": "^[A-Z]{2,4}\\.[A-Z0-9_]{2,40}$"
+        },
+        "definition_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+$"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "stale",
+            "partial",
+            "error",
+            "unavailable"
+          ]
+        },
+        "measure": {
+          "$ref": "#/$defs/measure"
+        },
+        "period": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tz"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "instant",
+                "day",
+                "mtd",
+                "ytd",
+                "month",
+                "rolling_24h",
+                "rolling_7d",
+                "rolling_30d",
+                "season"
+              ]
+            },
+            "start": {
+              "type": "string",
+              "format": "date"
+            },
+            "end": {
+              "type": "string",
+              "format": "date"
+            },
+            "tz": {
+              "enum": [
+                "Asia/Seoul",
+                "Asia/Tashkent",
+                "UTC"
+              ]
+            },
+            "season_id": {
+              "type": "string"
+            }
+          },
+          "allOf": [
+            {
+              "$comment": "period.instant_no_range",
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "instant"
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "start"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "end"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$comment": "period.season_id",
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "season"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "season_id"
+                ]
+              }
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "소스가 이 값을 계산한 시각"
+        },
+        "data_as_of": {
+          "description": "데이터 안의 최신 업무일. 모르면 null(미확인) — 잘못된 문자열 금지",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "freshness_hint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "monitor": {
+              "enum": [
+                "freshness_build",
+                "none"
+              ]
+            },
+            "verdict": {
+              "enum": [
+                "HEALTHY",
+                "STALE",
+                "UNKNOWN",
+                null
+              ]
+            },
+            "consumer_id": {
+              "type": "string"
+            },
+            "evaluated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "quality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "level"
+          ],
+          "properties": {
+            "level": {
+              "enum": [
+                "verified",
+                "unverified",
+                "estimated"
+              ]
+            },
+            "flags": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "DEFINITION_PENDING",
+                  "ESTIMATED_COST_RATIO",
+                  "EXCLUDES_BLANK_PRODUCT_ROWS",
+                  "UNDERCOUNT_CLIENT_NOT_CONFIGURED",
+                  "PUBLIC_WRITE_NOISE",
+                  "PARTIAL_CHANNELS",
+                  "OUT_OF_SEASON",
+                  "MANUAL_ENTRY",
+                  "ANOMALY_SALES_GT_HARVEST"
+                ]
+              }
+            },
+            "coverage": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "수집 성공 비율(채널 3개 중 2개 = 0.667)"
+            }
+          }
+        },
+        "breakdown": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "measure"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "코드값(예: UZ, 수주, zone:A). 표시 문구는 ONE i18n"
+              },
+              "measure": {
+                "$ref": "#/$defs/measure"
+              }
+            }
+          }
+        },
+        "compare": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "previous": {
+              "$ref": "#/$defs/measure"
+            },
+            "previous_period": {
+              "type": "string",
+              "description": "예: 2026-08-01/2026-08-16"
+            },
+            "target": {
+              "$ref": "#/$defs/measure"
+            },
+            "target_source": {
+              "type": "string"
+            }
+          }
+        },
+        "fx": {
+          "type": "object",
+          "description": "converted:true 값이 하나 이상 있을 때만 보낸다(없으면 금지). 뜻: 1 USD = rate × quote. 환산값은 항상 참고용",
+          "additionalProperties": false,
+          "required": [
+            "base",
+            "quote",
+            "rate",
+            "as_of",
+            "provider"
+          ],
+          "properties": {
+            "base": {
+              "enum": [
+                "USD"
+              ]
+            },
+            "quote": {
+              "enum": [
+                "KRW",
+                "UZS"
+              ]
+            },
+            "rate": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000
+            },
+            "as_of": {
+              "type": "string",
+              "format": "date"
+            },
+            "provider": {
+              "enum": [
+                "CBU",
+                "exchangerate.host",
+                "static"
+              ]
+            }
+          }
+        },
+        "sensitivity": {
+          "enum": [
+            "internal",
+            "department",
+            "finance",
+            "personal"
+          ]
+        },
+        "drilldown_app": {
+          "type": "string",
+          "description": "런처 앱 ID(새 탭). URL은 ONE이 조립"
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "retryable"
+          ],
+          "properties": {
+            "code": {
+              "enum": [
+                "SOURCE_TIMEOUT",
+                "SOURCE_AUTH",
+                "SOURCE_RATE_LIMIT",
+                "SOURCE_SCHEMA",
+                "UPSTREAM_DOWN",
+                "NOT_IMPLEMENTED",
+                "DEFINITION_PENDING",
+                "DATA_NOT_CENTRALIZED"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "last_success_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "detail": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "비밀값·개인정보 금지"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "kpi.status_value",
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "error",
+                  "unavailable"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "measure": {
+                "properties": {
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "error"
+              ]
+            },
+            "properties": {
+              "measure": {
+                "properties": {
+                  "value": {
+                    "not": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "kpi.converted_fx.measure",
+          "if": {
+            "required": [
+              "measure"
+            ],
+            "properties": {
+              "measure": {
+                "required": [
+                  "converted"
+                ],
+                "properties": {
+                  "converted": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fx"
+            ]
+          }
+        },
+        {
+          "$comment": "kpi.converted_fx.compare_previous",
+          "if": {
+            "required": [
+              "compare"
+            ],
+            "properties": {
+              "compare": {
+                "required": [
+                  "previous"
+                ],
+                "properties": {
+                  "previous": {
+                    "required": [
+                      "converted"
+                    ],
+                    "properties": {
+                      "converted": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fx"
+            ]
+          }
+        },
+        {
+          "$comment": "kpi.converted_fx.compare_target",
+          "if": {
+            "required": [
+              "compare"
+            ],
+            "properties": {
+              "compare": {
+                "required": [
+                  "target"
+                ],
+                "properties": {
+                  "target": {
+                    "required": [
+                      "converted"
+                    ],
+                    "properties": {
+                      "converted": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fx"
+            ]
+          }
+        },
+        {
+          "$comment": "kpi.converted_fx.breakdown",
+          "if": {
+            "required": [
+              "breakdown"
+            ],
+            "properties": {
+              "breakdown": {
+                "contains": {
+                  "required": [
+                    "measure"
+                  ],
+                  "properties": {
+                    "measure": {
+                      "required": [
+                        "converted"
+                      ],
+                      "properties": {
+                        "converted": {
+                          "const": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fx"
+            ]
+          }
+        },
+        {
+          "$comment": "kpi.fx_quote_krw",
+          "if": {
+            "required": [
+              "measure",
+              "fx"
+            ],
+            "properties": {
+              "measure": {
+                "required": [
+                  "converted",
+                  "currency"
+                ],
+                "properties": {
+                  "converted": {
+                    "const": true
+                  },
+                  "currency": {
+                    "const": "KRW"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fx": {
+                "properties": {
+                  "quote": {
+                    "const": "KRW"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "kpi.fx_quote_uzs",
+          "if": {
+            "required": [
+              "measure",
+              "fx"
+            ],
+            "properties": {
+              "measure": {
+                "required": [
+                  "converted",
+                  "currency"
+                ],
+                "properties": {
+                  "converted": {
+                    "const": true
+                  },
+                  "currency": {
+                    "const": "UZS"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fx": {
+                "properties": {
+                  "quote": {
+                    "const": "UZS"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "kpi.fx_requires_converted",
+          "if": {
+            "required": [
+              "fx"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "measure"
+                ],
+                "properties": {
+                  "measure": {
+                    "required": [
+                      "converted"
+                    ],
+                    "properties": {
+                      "converted": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "compare"
+                ],
+                "properties": {
+                  "compare": {
+                    "required": [
+                      "previous"
+                    ],
+                    "properties": {
+                      "previous": {
+                        "required": [
+                          "converted"
+                        ],
+                        "properties": {
+                          "converted": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "compare"
+                ],
+                "properties": {
+                  "compare": {
+                    "required": [
+                      "target"
+                    ],
+                    "properties": {
+                      "target": {
+                        "required": [
+                          "converted"
+                        ],
+                        "properties": {
+                          "converted": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "breakdown"
+                ],
+                "properties": {
+                  "breakdown": {
+                    "contains": {
+                      "required": [
+                        "measure"
+                      ],
+                      "properties": {
+                        "measure": {
+                          "required": [
+                            "converted"
+                          ],
+                          "properties": {
+                            "converted": {
+                              "const": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "money",
+            "count",
+            "ratio",
+            "quantity",
+            "timestamp",
+            "state",
+            "fx_rate"
+          ]
+        },
+        "value": {
+          "description": "null=미측정(0과 구분). 종류별 형식은 아래 조건으로 강제. money·count 원문은 정수 표기만(런타임 검사)"
+        },
+        "unit": {
+          "enum": [
+            "KRW",
+            "USD",
+            "UZS",
+            "count",
+            "person",
+            "percent",
+            "kg",
+            "g",
+            "mS/cm",
+            "pH",
+            "Brix",
+            "N",
+            "mm",
+            "cm",
+            "day",
+            "hour",
+            "second",
+            "datetime",
+            "state",
+            "KRW/USD",
+            "UZS/USD"
+          ]
+        },
+        "currency": {
+          "enum": [
+            "KRW",
+            "USD",
+            "UZS"
+          ]
+        },
+        "minor_exponent": {
+          "enum": [
+            0,
+            2
+          ]
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "표시 소수 자릿수. money에는 금지(minor_exponent가 담당, 런타임 검사)"
+        },
+        "converted": {
+          "type": "boolean",
+          "default": false,
+          "description": "환산(참고) 값 표시. true는 kind money에서만, 같은 KPI에 fx 필수"
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "measure.money",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "money"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "currency",
+              "minor_exponent"
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "currency": {
+                    "const": "KRW"
+                  },
+                  "unit": {
+                    "const": "KRW"
+                  },
+                  "minor_exponent": {
+                    "const": 0
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "currency": {
+                    "const": "USD"
+                  },
+                  "unit": {
+                    "const": "USD"
+                  },
+                  "minor_exponent": {
+                    "const": 2
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "currency": {
+                    "const": "UZS"
+                  },
+                  "unit": {
+                    "const": "UZS"
+                  },
+                  "minor_exponent": {
+                    "const": 2
+                  }
+                }
+              }
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "currency"
+                  ]
+                },
+                {
+                  "required": [
+                    "minor_exponent"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "measure.count",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "count"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "unit": {
+                "enum": [
+                  "count",
+                  "person"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.ratio",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ratio"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "unit": {
+                "const": "percent"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.quantity",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "quantity"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": -1000000000000,
+                "maximum": 1000000000000
+              },
+              "unit": {
+                "enum": [
+                  "kg",
+                  "g",
+                  "mS/cm",
+                  "pH",
+                  "Brix",
+                  "N",
+                  "mm",
+                  "cm",
+                  "day",
+                  "hour",
+                  "second"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.timestamp",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "timestamp"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              },
+              "unit": {
+                "const": "datetime"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.state",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "state"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{1,31}$"
+                  }
+                ]
+              },
+              "unit": {
+                "const": "state"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.fx_rate",
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "fx_rate"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000
+              },
+              "unit": {
+                "enum": [
+                  "KRW/USD",
+                  "UZS/USD"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "$comment": "measure.converted_money_only",
+          "if": {
+            "required": [
+              "converted"
+            ],
+            "properties": {
+              "converted": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "money"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

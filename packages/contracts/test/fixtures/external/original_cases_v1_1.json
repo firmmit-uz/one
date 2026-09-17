@@ -1,0 +1,1742 @@
+[
+  {
+    "id": "C01",
+    "description": "정상 예시(대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C02",
+    "description": "모르는 통화 EUR",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "EUR",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C03",
+    "description": "generated_at 잘못된 문자열",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "not-a-time",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C04",
+    "description": "단위 KRW · 통화 USD 불일치",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "USD",
+            "minor_exponent": 2
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C05",
+    "description": "KRW 소수 자릿수 2",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 2
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C06",
+    "description": "status ok인데 값 null",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": null,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C07",
+    "description": "data_as_of 잘못된 문자열",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "not-a-time",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C08",
+    "description": "건수 -1.5",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": -1.5,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C09",
+    "description": "건수 \"pending\"",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": "pending",
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C10",
+    "description": "안전 범위 밖 정수 금액(원문 9007199254740993)",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 9007199254740992,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C11",
+    "description": "금액 소수 1.5",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1.5,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C12",
+    "description": "unavailable + 값 null + error(대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "unavailable",
+          "measure": {
+            "kind": "money",
+            "value": null,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice",
+          "error": {
+            "code": "NOT_IMPLEMENTED",
+            "retryable": false,
+            "last_success_at": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "C13",
+    "description": "error인데 error 객체 없음",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "error",
+          "measure": {
+            "kind": "money",
+            "value": null,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C14",
+    "description": "건수에 단위 percent",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "percent"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C15",
+    "description": "USD 소수 자릿수 0",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 100,
+            "unit": "USD",
+            "currency": "USD",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C16",
+    "description": "UZS 소수 자릿수 2(대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1177500,
+            "unit": "UZS",
+            "currency": "UZS",
+            "minor_exponent": 2
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C17",
+    "description": "data_as_of 날짜·시각 형식(대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-09-16T08:00:00+09:00",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C18",
+    "description": "data_as_of null(미확인, 대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": null,
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C19",
+    "description": "환산값인데 fx 없음",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0,
+            "converted": true
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C20",
+    "description": "비율 값 \"abc\"",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "ratio",
+            "value": "abc",
+            "unit": "percent"
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C21",
+    "description": "건수에 currency 필드",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count",
+                "currency": "KRW"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C22",
+    "description": "error인데 값이 있음",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "error",
+          "measure": {
+            "kind": "money",
+            "value": 1452313905,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice",
+          "error": {
+            "code": "SOURCE_TIMEOUT",
+            "retryable": true,
+            "last_success_at": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "C23",
+    "description": "시각 KPI 값이 잘못된 문자열",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "timestamp",
+            "value": "yesterday",
+            "unit": "datetime"
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C24",
+    "description": "금액 음수 정수(환불, 대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "money",
+            "value": -50000,
+            "unit": "KRW",
+            "currency": "KRW",
+            "minor_exponent": 0
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "fx": {
+            "base": "USD",
+            "quote": "KRW",
+            "rate": 1358.12,
+            "as_of": "2026-10-05",
+            "provider": "CBU"
+          },
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C25",
+    "description": "수량 KPI 값 \"abc\"·단위 KRW",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "quantity",
+            "value": "abc",
+            "unit": "KRW"
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C26",
+    "description": "상태 KPI 값 소문자 자유문장",
+    "expected": "reject",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "state",
+            "value": "maybe ok",
+            "unit": "state"
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "status:가견적",
+              "measure": {
+                "kind": "count",
+                "value": 4,
+                "unit": "count"
+              }
+            },
+            {
+              "key": "status:협상",
+              "measure": {
+                "kind": "count",
+                "value": 1,
+                "unit": "count"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  },
+  {
+    "id": "C27",
+    "description": "수량·상태 정상값(대조군)",
+    "expected": "accept",
+    "data": {
+      "schema_version": "1.1",
+      "request_id": "r-7f3c9a1e",
+      "generated_at": "2026-10-05T23:10:04Z",
+      "source": {
+        "system": "quote",
+        "source_version": "18.24.2",
+        "data_version": "PRICE_VER 19.0",
+        "environment": "production"
+      },
+      "kpis": [
+        {
+          "kpi_id": "GH.PIPELINE_VALUE",
+          "definition_version": "1.0",
+          "status": "ok",
+          "measure": {
+            "kind": "quantity",
+            "value": 5984,
+            "unit": "g"
+          },
+          "period": {
+            "type": "instant",
+            "tz": "Asia/Seoul"
+          },
+          "updated_at": "2026-10-05T23:10:03Z",
+          "data_as_of": "2026-10-05",
+          "quality": {
+            "level": "verified",
+            "flags": []
+          },
+          "breakdown": [
+            {
+              "key": "zone:A",
+              "measure": {
+                "kind": "state",
+                "value": "NORMAL",
+                "unit": "state"
+              }
+            }
+          ],
+          "sensitivity": "department",
+          "drilldown_app": "quote-backoffice"
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "name": "@firmmit-one/contracts",
+  "version": "1.2.0",
+  "private": true,
+  "description": "FIRMMIT ONE KPI 요약 봉투 계약 — JSON Schema v1.2 + 원문 토큰·의미 검사",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./schema/kpi-summary-v1.2.json": "./schema/kpi-summary-v1.2.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node test/run-cases.mjs && node test/mutate.mjs && node test/semantic.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  }
+}

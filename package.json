@@ -1,0 +1,13 @@
+{
+  "name": "firmmit-one",
+  "private": true,
+  "version": "0.1.0",
+  "description": "FIRMMIT ONE 통합 플랫폼 모노레포",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  }
+}

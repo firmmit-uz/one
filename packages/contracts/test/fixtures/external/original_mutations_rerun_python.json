@@ -1,0 +1,81 @@
+[
+  {
+    "mutation": "remove_measure_money",
+    "mismatch_cases": [
+      "C04",
+      "C05",
+      "C10",
+      "C11",
+      "C15",
+      "C21"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_measure_count",
+    "mismatch_cases": [
+      "C08",
+      "C09",
+      "C14"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_measure_ratio",
+    "mismatch_cases": [
+      "C20"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_measure_quantity",
+    "mismatch_cases": [
+      "C25"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_measure_timestamp",
+    "mismatch_cases": [
+      "C23"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_measure_state",
+    "mismatch_cases": [
+      "C26"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_status_value",
+    "mismatch_cases": [
+      "C06",
+      "C13",
+      "C22"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_converted_fx",
+    "mismatch_cases": [
+      "C19"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_data_as_of_format",
+    "mismatch_cases": [
+      "C07"
+    ],
+    "detected": true
+  },
+  {
+    "mutation": "remove_money_maximum",
+    "mismatch_cases": [
+      "C10"
+    ],
+    "detected": true
+  }
+]
