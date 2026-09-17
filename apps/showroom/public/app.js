@@ -317,11 +317,24 @@ function applyContent(data, now) {
   startAutoplay();
 }
 
+/**
+ * 시험용 시계. **로컬에서만** `?now=YYYY-MM-DD` 를 받는다.
+ *
+ * 배포본에서 받아 주면 주소창만 고쳐서 승인 기간 밖 항목(만료된 것·게시 전인 것)을
+ * TV 에 띄울 수 있다. 회수 방어가 게시 기간뿐이므로 그 구멍을 열어 두면 안 된다.
+ * 로컬이 아니거나 형식이 맞지 않으면 null → 실제 시각을 쓴다.
+ */
+function forcedDate(hostname, search) {
+  const LOCAL = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '']);
+  if (!LOCAL.has(hostname)) return null;
+  const forced = new URLSearchParams(search).get('now');
+  if (!forced || !/^\d{4}-\d{2}-\d{2}$/.test(forced)) return null;
+  const d = new Date(`${forced}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 async function boot() {
-  // 시계 조작 시험용: ?now=YYYY-MM-DD 는 표시 기간 판단에만 쓴다
-  const params = new URLSearchParams(location.search);
-  const forced = params.get('now');
-  const now = forced && /^\d{4}-\d{2}-\d{2}$/.test(forced) ? new Date(`${forced}T12:00:00Z`) : new Date();
+  const now = forcedDate(location.hostname, location.search) ?? new Date();
 
   try {
     applyContent(await loadContent(), now);
@@ -359,4 +372,4 @@ async function boot() {
 // 브라우저에서만 시작한다 (시험은 표시 조건 함수만 가져다 쓴다)
 if (typeof window !== 'undefined' && typeof document !== 'undefined') boot();
 
-export { state, applyContent, handleKey };
+export { state, applyContent, handleKey, forcedDate };

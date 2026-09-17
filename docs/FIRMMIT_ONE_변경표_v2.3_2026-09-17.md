@@ -4,7 +4,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-09-17 |
+| 작성일 | 2026-09-17 (같은 날 Z35·Z36 보강) |
 | 앞 판 | 변경표 v2.2 (2026-09-16) |
 | 이번 범위 | Phase 1.5 **WP1–WP3** + TV 쇼룸 **WP4** — 로컬 제작·시험까지 |
 | 배포 | **하지 않음.** 게이트 G1(V0–V13) 통과 + 박선기 대표 승인 뒤 FIRMMIT 직원이 직접 |
@@ -58,6 +58,22 @@
 | Z32 | 쇼룸 QR | WP4 | 빌드 시점에 SVG 로 생성(실행 중 생성 없음). **독립 디코더(OpenCV)로 다시 읽어** 공개 주소와 일치 확인 | 시험 1건(3개) | 통과 | 재시험 통과 | 실제 휴대폰 확인(G09) |
 | Z33 | `test/mutation.mjs` | 인수인계서 품질 기준 | 변이 9개 → **24개** (WP1 5 · WP2 5 · WP3 5 추가). `docs` 를 복사 목록에 추가 | `npm run test:mutation` | 24/24 검출 | 재시험 통과 | — |
 | Z34 | `package-lock.json` | 인수인계서 §1 단서 | 작업공간(`apps/showroom`)·의존성(`@firmmit-one/contracts`·`ajv-formats`·`ajv`·`qrcode-generator`) 추가로 갱신 | 새 사본에서 `npm ci` | 통과 | 재시험 통과 | — |
+| **Z35** | `src/tokens/refresh.ts` · `migrations/0006` | **Z23 자체 점검 결과 수정** | ④ batch 의 두 문장이 **같은 pre-state(`version = token.version`)** 만 조건으로 보게 바꿨다. 판정은 토큰 UPDATE 의 `meta.changes` **하나로만** 한다. 어긋난 경우(있을 수 없음)는 구조화 로그 + 기록 정정 | 시험 2건 신규(가시성 없음·기록만 적용됨) + 변이 3건 | 통과 | 수정함 | G02 (원격 D1 batch) |
+| **Z36** | `apps/showroom/public/app.js` | **WP4 자체 점검 결과 수정** | 시계 조작 `?now=YYYY-MM-DD` 를 **로컬(127.0.0.1·localhost)에서만** 받는다. 배포본에서는 무시 → 주소창으로 승인 기간을 우회할 수 없다 | 시험 9건 신규(호스트별·형식별 + 코드 규칙 2건) | 통과 | 수정함 | — |
+
+---
+
+### 1-1. Z35 · Z36 은 왜 고쳤나
+
+리뷰를 맡기기 전에 스스로 다시 읽다가 찾은 것이다. **둘 다 시험은 전부 통과하고 있었다.**
+
+| | Z35 (토큰 갱신) | Z36 (쇼룸 시계) |
+|---|---|---|
+| 예전 코드 | journal 문장이 **앞 문장이 방금 쓴** `version + 1` · `last_refresh_journal_id` 를 `EXISTS` 로 확인 | `?now=` 를 호스트 구분 없이 받음 |
+| 로컬에서 안 걸린 이유 | `node:sqlite` FakeD1 은 순차 실행이라 앞 문장 결과가 항상 보인다 | 시험 서버가 `127.0.0.1` 이라 배포 상황과 구분되지 않는다 |
+| 틀어지면 | 원격 D1 이 batch 안에서 그 가시성을 보장하지 않을 경우 **성공한 갱신이 전부 `conflict`** → 토큰 차단 → 관리자 재인증 | 주소창만 고쳐 **만료·게시 전 항목을 TV 에 표시** 가능 (`draft`·`withdrawn` 은 여전히 안 보인다) |
+| 지금 | 두 문장의 조건이 같은 pre-state 만 본다. batch 가 트랜잭션이면 되고, **read-your-write 는 필요 없다** | 로컬이 아니면 `?now=` 를 읽지 않는다. `forcedDate()` 를 내보내 호스트별로 직접 시험한다 |
+| 남은 가정 | "batch 는 트랜잭션이다" (공식 문서에 명시된 성질) — 그래도 G02 에서 확인한다 | 없음 |
 
 ---
 
@@ -68,13 +84,13 @@
 | # | 명령 | 인수 시점(기준값) | 작업 뒤 | 종료코드 | 판정 |
 |---|---|---|---|---|---|
 | 1 | `npm test -w packages/contracts` | 사례 85건 · 불일치 0 / 변이 60/60 / 의미 17/17 | 사례 **85건 · 불일치 0** / 변이 **60/60** / 의미 **17/17** / **Worker 17/17**(신규) / **ID 21/21**(신규) | 0 | ✅ 유지 + 증가 |
-| 2 | `npm test -w apps/hub` | 8파일 · **135/135** | 11파일 · **245/245** | 0 | ✅ 증가 |
+| 2 | `npm test -w apps/hub` | 8파일 · **135/135** | 11파일 · **247/247** (Z35 시험 2건 추가) | 0 | ✅ 증가 |
 | 3 | `npm run typecheck -w apps/hub` | 오류 0 | 오류 **0** | 0 | ✅ |
-| 4 | `npm run test:mutation -w apps/hub` | **9/9** 검출 | **24/24** 검출 · 미검출 0 | 0 | ✅ 증가 |
+| 4 | `npm run test:mutation -w apps/hub` | **9/9** 검출 | **27/27** 검출 · 미검출 0 (Z35 변이 3건 추가) | 0 | ✅ 증가 |
 | 5 | `npm run test:bundle -w apps/hub` | (없음) | **9/9** · 금지 구문 **0건** | 0 | ✅ 신규 |
-| 6 | `npm run build:dry -w apps/hub` | 약 **137 KiB** | **605.97 KiB** (gzip 94.47) | 0 | 기록만 — §3 |
+| 6 | `npm run build:dry -w apps/hub` | 약 **137 KiB** | **605.9 KiB** (gzip 약 94.5) | 0 | 기록만 — §3 |
 | 7 | `npm run test:ui -w apps/hub` | 13장 · 콘솔 오류 0 | **14장 + 1흐름** · 콘솔 오류 0 · 실패 0 | 0 | ✅ 증가 |
-| 8 | `npm test -w apps/showroom` | (없음) | **29/29** · 콘텐츠 문제 0건 | 0 | ✅ 신규 |
+| 8 | `npm test -w apps/showroom` | (없음) | **38/38** · 콘텐츠 문제 0건 (Z36 시험 9건 추가) | 0 | ✅ 신규 |
 | 9 | `npm run test:ui -w apps/showroom` | (없음) | **27/27** · 캡처 7장 · 외부 요청 0 · 콘솔 오류 0 | 0 | ✅ 신규 |
 | 10 | `npm ci` (새로 푼 사본) | 통과 | 통과 | 0 | ✅ |
 
@@ -103,7 +119,7 @@ Cron 의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 �
 |---|---|
 | `apps/hub/migrations/0004_groupsync.sql` | `c844c1ee96b0` |
 | `apps/hub/migrations/0005_kpi.sql` | `99f3d313cba3` |
-| `apps/hub/migrations/0006_tokens.sql` | `617a61105d0b` |
+| `apps/hub/migrations/0006_tokens.sql` | `8a37dd079ffa` (Z35 로 주석 갱신) |
 | `packages/contracts/schema/kpi-summary-v1.2.json` | `8ed9ab2ece1f` (바뀌지 않음) |
 | `packages/contracts/src/generated/schema-validator.mjs` | `9ea7420e6f2f` |
 | `packages/contracts/src/generated/schema-meta.mjs` | `8fa98dd8a1ec` |
@@ -111,6 +127,8 @@ Cron 의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 �
 | `apps/hub/docs/kpi-response.schema.json` | `33585bc588b2` |
 | `apps/showroom/content/manifest.schema.json` | `854b9f83cf51` |
 | `apps/showroom/content/manifest.json` | `bb8fac7f0cdc` |
+| `apps/hub/src/tokens/refresh.ts` (Z35) | `5655a374fc72` |
+| `apps/showroom/public/app.js` (Z36) | `db141430dea5` |
 
 스키마 해시는 사전 컴파일 검사기 안에도 들어 있다 — 스키마를 고치고 `build:validator` 를 다시 돌리지 않으면 시험이 실패한다.
 
@@ -121,7 +139,7 @@ Cron 의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 �
 | ID | 이번 작업과의 관계 | 확인해야 할 것 |
 |---|---|---|
 | **G01** | WP1 그룹 동기화 · 권한 판정 | 실제 Access 그룹 API 응답 모양(특히 `result_info` 유무, `require` 규칙의 실제 형태), 읽기 전용 토큰 권한, 실제 JWT 로 그룹에서 빠진 직원이 거부되는지 |
-| **G02** | WP1·WP2·WP3 의 D1 동작 전부 | 원격 D1 의 batch·조건부 UPDATE·트리거·`json_valid` 동작. 특히 **Z23**(④ + journal applied 를 한 batch 로 묶는 조건부 SQL)은 로컬 `node:sqlite` 에서만 확인했다 |
+| **G02** | WP1·WP2·WP3 의 D1 동작 전부 | 원격 D1 의 batch·조건부 UPDATE·트리거·`json_valid` 동작. 특히 **Z23→Z35**(④ + journal applied 를 한 batch 로 묶는 조건부 SQL)는 로컬 `node:sqlite` 에서만 확인했다. Z35 로 read-your-write 의존은 없앴고, 남은 가정은 "batch 는 트랜잭션" 하나다 |
 | **G03** | WP2 외부 소스 | 농자재·견적 등 실제 소스의 필드·금액. 지금은 어댑터 인터페이스와 가짜 소스 왕복까지만 |
 | **G09** | WP4 TV 쇼룸 | 실제 TV·리모컨·24시간 연속·재부팅·절전·네트워크 단절 (`apps/showroom/README.md` §5 체크리스트) |
 | **G10** | WP4 콘텐츠 | 승인된 콘텐츠·승인자·표시 언어. 지금은 전부 자리표시자이고 "샘플 — 승인 전" 이 계속 표시된다 |
@@ -137,7 +155,7 @@ G04(카카오봇)·G05(CCTV)·G06(스마트스토어·프레시)·G07(알림)·G
 | Access 그룹 목록 응답에 `result_info` 가 있는지 | 있으면 쓰고, 없으면 "마지막 쪽이 `per_page` 미만" 으로 판정 (양쪽 모두 시험) | 읽기 전용 토큰으로 1회 호출해 응답 확인 |
 | `require` 규칙의 실제 모양 | 로그인 방식 조건(`login_method`·`auth_method`)만 허용하고 구성원 계산에 쓰지 않음. 그 밖은 동기화 전체 실패 | 실제 Access 그룹 설정 확인 |
 | `email_list` 규칙 지원 | **지원하지 않고 실패 처리.** 목록 조회 API 를 공식 문서로 확인하지 않았다 | 목록 조회 API 확인 후 별도 시험과 함께 추가 |
-| 원격 D1 batch 안에서 앞 문장 결과를 뒤 문장이 보는지 | 보인다고 가정하고 구현 + `meta.changes` 로 이중 확인 | G02 (staging D1) |
+| 원격 D1 batch 안에서 앞 문장 결과를 뒤 문장이 보는지 | **더 이상 기대지 않는다(Z35).** 두 문장이 같은 pre-state 만 본다 | G02 (staging D1) — 확인해도 코드는 그대로 |
 | cafe24 몰 ID·앱 등록·실제 갱신 주소 | 자리표시자. 어댑터는 호출하면 `provider_not_configured` 로 끝난다 | 앱 등록·최초 인증 뒤 |
 | Cron 실행의 CPU 사용량(Free 10 ms) | 번들 크기만 기록 | 배포 후 실측 |
 | 쇼룸 최종 주소 | 정해지지 않음. `show.firmmit.com` 은 개설·승인된 사실이 없다 | FIRMMIT 결정 |

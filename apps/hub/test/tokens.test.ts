@@ -189,6 +189,29 @@ describe('WP3 기본값·설정', () => {
   });
 });
 
+/**
+ * ④ batch 의 **journal 문장만** 바꿔치기한다.
+ *
+ * 원격 D1 이 batch 안에서 앞 문장의 결과를 뒤 문장에 보여 주지 않는 경우(=journal 문장이 0행)와,
+ * 반대로 기록만 먼저 '적용됨' 이 되는 경우를 흉내 내기 위한 것이다.
+ * 로컬 FakeD1 은 순차 실행이라 두 경우 모두 자연스럽게는 만들 수 없다.
+ */
+function swapJournalStmt(c: Ctx, replacementSql: string | null): D1Database {
+  const real = c.d1;
+  const isStep4 = (stmts: { sql: string }[]) =>
+    stmts.length === 2 && stmts[0]!.sql.includes("UPDATE token_refresh_journal SET outcome = 'applied'");
+  const proxy = {
+    prepare: (sql: string) => real.prepare(sql),
+    exec: (sql: string) => real.exec(sql),
+    batch: async (stmts: { sql: string }[]) => {
+      if (!isStep4(stmts)) return real.batch(stmts as never);
+      const head = real.prepare(replacementSql ?? 'SELECT 1');
+      return real.batch([head, stmts[1]] as never);
+    },
+  };
+  return proxy as unknown as D1Database;
+}
+
 describe('WP3 ①–⑥ 흐름', () => {
   it('정상: 새 토큰 저장 + version 증가 + journal applied + 실행권 해제', async () => {
     const c = await ctx();
@@ -329,6 +352,64 @@ describe('WP3 ①–⑥ 흐름', () => {
     const next = await refreshOne(c.db, c.key, tokenRow(c.sqlite), provider, deps());
     expect(next.outcome).toBe('blocked');
     spy.mockRestore();
+  });
+
+  it('④ journal 문장이 앞 문장 결과를 못 봐도 성공은 성공이다 (원격 D1 가시성에 기대지 않는다)', async () => {
+    const c = await ctx();
+    await seedToken(c);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // journal 문장이 0행 → 예전 구현이라면 여기서 conflict 로 뒤집혀 멀쩡한 토큰이 차단됐다
+    const db = swapJournalStmt(c, null);
+    const r = await refreshOne(db, c.key, tokenRow(c.sqlite), fakeProvider(c, (n) => ({ status: 200, body: okBody(n) })), deps());
+    expect(r).toMatchObject({ outcome: 'applied', dispatched: true });
+
+    const row = tokenRow(c.sqlite);
+    expect(row.version).toBe(2);
+    expect(await open(c.key, { ciphertext: toBytes(row.ciphertext)!, iv: toBytes(row.iv)! })).toBe('refresh-token-001-new');
+
+    const [j] = journals(c.sqlite);
+    expect(j).toMatchObject({ outcome: 'applied' }); // 어긋난 기록을 맞췄다
+    expect(spy).toHaveBeenCalledWith('token_journal_mismatch', TOKEN_ID, 'token_without_applied');
+    spy.mockRestore();
+
+    // 핵심: 멀쩡한 토큰이 차단되지 않는다
+    const next = await refreshOne(c.db, c.key, tokenRow(c.sqlite), fakeProvider(c, (n) => ({ status: 200, body: okBody(n) })), deps());
+    expect(next.outcome).toBe('applied');
+  });
+
+  it("④⑤ 기록만 '적용됨' 으로 어긋나도 판정은 토큰 쪽을 따르고 기록을 되돌린다", async () => {
+    const c = await ctx();
+    await seedToken(c);
+    const row = tokenRow(c.sqlite);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // 외부 호출 중에 다른 실행이 버전을 올린다 (= 토큰 UPDATE 는 0행)
+    const provider: ProviderAdapter = {
+      name: 'cafe24',
+      async call(req) {
+        c.calls.push({ refreshToken: req.refreshToken });
+        c.sqlite.prepare('UPDATE tokens SET version = version + 1 WHERE token_id = ?').run(TOKEN_ID);
+        return { status: 200, body: okBody(9) };
+      },
+      parse: cafe24Adapter.parse,
+    };
+    // 그런데 journal 은 조건 없이 applied 로 적힌다 (있을 수 없는 상태)
+    const db = swapJournalStmt(
+      c,
+      "UPDATE token_refresh_journal SET outcome = 'applied', finished_at = '2026-09-17T00:00:00.000Z' WHERE id = (SELECT MAX(id) FROM token_refresh_journal)",
+    );
+    const r = await refreshOne(db, c.key, row, provider, deps());
+    expect(r).toMatchObject({ outcome: 'conflict', dispatched: true });
+    expect(tokenRow(c.sqlite).version).toBe(2); // 덮어쓰지 않았다
+
+    const [j] = journals(c.sqlite);
+    expect(j).toMatchObject({ outcome: 'conflict' }); // 'applied' 로 남으면 차단 규칙이 이 시도를 놓친다
+    expect(spy).toHaveBeenCalledWith('token_journal_mismatch', TOKEN_ID, 'applied_without_token');
+    spy.mockRestore();
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const next = await refreshOne(c.db, c.key, tokenRow(c.sqlite), provider, deps());
+    expect(next.outcome).toBe('blocked');
+    warn.mockRestore();
   });
 
   it('⑥ 만료 뒤 다른 실행이 가져간 실행권을 이전 보유자가 풀지 못한다', async () => {

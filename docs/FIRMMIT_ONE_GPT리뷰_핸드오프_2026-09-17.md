@@ -1,9 +1,12 @@
 # FIRMMIT ONE — 코드 리뷰 요청서 (GPT 용)
 
-작성 2026-09-17 · 대상 커밋 `11f3aa5` · 저장소 <https://github.com/firmmit-uz/one> (branch `firmmit/brave-bardeen-0nolbj`)
+작성 2026-09-17 (2판) · 대상 커밋 `<COMMIT>` · 저장소 <https://github.com/firmmit-uz/one> (branch `firmmit/brave-bardeen-0nolbj`)
 
 > **한 줄 요청** — Phase 1.5(WP1–WP4)로 새로 쓴 코드 약 3,000줄에서 **실제로 깨지는 것**을 찾아 달라.
 > 취향·스타일 의견은 받지 않는다. "이 입력에서 이렇게 틀린다"를 쓸 수 있는 것만 달라.
+>
+> **1판과 달라진 점** — 1판에서 내가 🔴 로 표시했던 2건(Z35 토큰 갱신 · Z36 쇼룸 시계)은 **이미 고쳤다.**
+> 지금은 §4 ①② 에 "고치기 전 / 고친 뒤"가 나란히 있다. **고친 것이 실제로 문제를 없앴는지**를 봐 달라.
 
 ---
 
@@ -38,12 +41,12 @@
 
 | 순위 | 대상 | 파일 |
 |---|---|---|
-| 1 | **토큰 갱신 동시성** — 두 실행이 겹칠 때 토큰이 깨지는가 | `apps/hub/src/tokens/refresh.ts` (456줄) |
+| 1 | **토큰 갱신 동시성** — 두 실행이 겹칠 때 토큰이 깨지는가. **§4 ① 의 수정이 맞는지 포함** | `apps/hub/src/tokens/refresh.ts` (약 470줄) |
 | 2 | **fail-closed 구멍** — 설정 누락·이상 응답이 "정상"으로 흘러가는 경로 | `groupsync.ts` · `kpi/*` · `tokens/*` |
 | 3 | **권한 우회** — 열람 수준(`viewLevelFor`)과 필터를 통과해 값이 새는 경로 | `apps/hub/src/kpi/gateway.ts` (304줄) |
 | 4 | **Workers 런타임 비호환** — 사전 컴파일 검사기가 Worker 에서 실제로 도는가 | `packages/contracts/src/worker.mjs` · `scripts/build-validator.mjs` |
 | 5 | **정규식 오탐/누락** — 공통 ID 6종 + 초안 5종 | `packages/contracts/src/ids.mjs` (159줄) |
-| 6 | **쇼룸 정보 유출** — 방문객 화면에 내부 정보가 보이는 경로 | `apps/showroom/public/app.js` · `scripts/check-content.mjs` |
+| 6 | **쇼룸 정보 유출·표시 규칙 우회** — **§4 ② 의 수정이 맞는지 포함** | `apps/showroom/public/app.js` · `scripts/check-content.mjs` |
 | 7 | **시험이 실제로 무엇을 막는가** — 통과하는데 버그를 못 잡는 시험 | `apps/hub/test/*` · `packages/contracts/test/*` |
 
 ### 보지 않아도 되는 것
@@ -58,24 +61,24 @@
 ## 2. 재현 방법
 
 ```bash
-git clone https://github.com/firmmit-uz/one && cd one && git checkout 11f3aa5
+git clone https://github.com/firmmit-uz/one && cd one && git checkout <COMMIT>
 node -v                               # v22.13 이상 (확인 시점 v22.22.2)
 npm ci
 export WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false
 
 npm test -w packages/contracts        # 사례 85 · 변이 60 · 의미 17 · Worker 17 · ID 21
-npm test -w apps/hub                  # 11파일 245건
+npm test -w apps/hub                  # 11파일 247건
 npm run typecheck -w apps/hub         # 오류 0
-npm run test:mutation -w apps/hub     # 변이 24/24 검출
+npm run test:mutation -w apps/hub     # 변이 27/27 검출
 npm run test:bundle -w apps/hub       # 번들에 eval·new Function·node: 없음 9/9
-npm run build:dry -w apps/hub         # 605.97 KiB (배포 아님)
-npm test -w apps/showroom             # 29/29
+npm run build:dry -w apps/hub         # 605.9 KiB (배포 아님)
+npm test -w apps/showroom             # 38/38
 ```
 
 화면 시험(`npm run test:ui`)은 Python Playwright + `opencv-python-headless` 가 필요하다. 리뷰에 필수는 아니다.
 
 **전달물 ZIP** `FIRMMIT_ONE_WP1-WP4_2026-09-17.zip`
-SHA-256 `7a9760ebcb947f350daeb2250f5e159cb0725c8465984fe1b7793ec718f1eba3` (147개 추적 파일, `git archive 11f3aa5`)
+SHA-256 `<ZIPHASH>` (148개 추적 파일, `git archive <COMMIT>`)
 
 ---
 
@@ -87,8 +90,8 @@ SHA-256 `7a9760ebcb947f350daeb2250f5e159cb0725c8465984fe1b7793ec718f1eba3` (147�
 | **WP2-A** | KPI 봉투 계약 v1.2 검사기를 **Workers 에서 돌 수 있게** — 빌드 시점 Ajv standalone 사전 컴파일 (Workers 는 `eval`·`new Function` 금지) | `contracts/src/{core,worker}.mjs` · `scripts/build-validator.mjs` | 85 사례 Node·Worker 판정 완전 일치 |
 | **WP2-B** | KPI 게이트웨이: 봉투 생성 → 계약 검증 → stale 재계산 → 캐시 → **열람 권한 필터** → 표시 필드. `GET /api/kpi` | `src/kpi/*` 886줄 · `migrations/0005` | 39건 + 변이 3 |
 | **WP2-C** | 공통 ID 검사기 — 확정 6종(CUS·PRD·SKU·ORD·PRJ·EMP) + 초안 5종(`status:'draft'`) | `contracts/src/ids.mjs` | 21건 |
-| **WP3** | 외부 토큰(cafe24 등) 회전 갱신. **기본 꺼짐**(`TOKEN_REFRESH_ENABLED: "false"`), 가짜 서버로만 시험 | `src/tokens/*` 604줄 · `migrations/0006` | 36건 + 변이 5 |
-| **WP4** | TV 쇼룸 — 허브와 **코드·데이터·세션·D1 완전 분리**. 저장소·비밀값·Cron 없음, 외부 요청 0건 | `apps/showroom/**` | 29 + 27건 |
+| **WP3** | 외부 토큰(cafe24 등) 회전 갱신. **기본 꺼짐**(`TOKEN_REFRESH_ENABLED: "false"`), 가짜 서버로만 시험 | `src/tokens/*` 약 620줄 · `migrations/0006` | 38건 + 변이 8 |
+| **WP4** | TV 쇼룸 — 허브와 **코드·데이터·세션·D1 완전 분리**. 저장소·비밀값·Cron 없음, 외부 요청 0건 | `apps/showroom/**` | 38 + 27건 |
 
 ### 지켜야 하는 불변식 (여기가 깨지면 그게 결함이다)
 
@@ -104,53 +107,84 @@ SHA-256 `7a9760ebcb947f350daeb2250f5e159cb0725c8465984fe1b7793ec718f1eba3` (147�
 ## 4. 우선 검토 지점 — **내가 의심하는 곳**
 
 아래 8개는 내가 직접 짚은 곳이다. 전부 "내가 틀렸을 수 있다"고 보고 판정해 달라.
-①②는 **실제 결함일 가능성이 높다고 본다.** 아직 고치지 않았다 — 리뷰 판정을 받고 고치려고 남겨 두었다.
+**①② 는 이미 고쳤다**(변경표 Z35·Z36). 고치기 전 문제와 고친 방법을 나란히 적었으니,
+**고친 것이 실제로 문제를 없앴는지 · 새 문제를 만들지 않았는지**를 봐 달라. ③–⑧ 은 그대로 판정만 받는다.
 
 ---
 
-### ① `refresh.ts:345` — batch 안에서 앞 문장 결과를 뒤 문장이 못 보면, **성공한 갱신이 전부 `conflict` 로 판정된다** 🔴
+### ① `refresh.ts` ④ batch — **고쳤다.** 고친 것이 맞는지 봐 달라 (Z35)
 
-`apps/hub/src/tokens/refresh.ts:317–345`
+**1판에서 찾은 문제.** 두 번째 문장의 `EXISTS` 가 **첫 문장이 방금 쓴** `version + 1` 과
+`last_refresh_journal_id` 를 확인하고 있었다. 즉 원격 D1 의 batch 안에서 앞 문장 결과가
+뒤 문장에 보인다(read-your-write)는 **확인되지 않은 전제** 위에 판정이 얹혀 있었다.
+전제가 틀리면 **성공한 갱신이 전부 `conflict` 로 뒤집혀** 토큰이 차단되고 관리자 재인증이 필요해진다.
+로컬 `node:sqlite` FakeD1 은 순차 실행이라 시험으로는 드러나지 않았다.
+
+**고친 방법 —** 두 문장이 **같은 pre-state(`version = token.version`)** 만 조건으로 보게 했다.
+판정은 토큰 UPDATE 의 `meta.changes` **하나로만** 한다.
 
 ```ts
 const batch = await db.batch([
-  db.prepare('UPDATE tokens SET ciphertext=?, ..., version = version + 1, last_refresh_journal_id=? WHERE token_id=? AND version=?')...,
-  db.prepare("UPDATE token_refresh_journal SET outcome='applied', finished_at=? WHERE id=? AND outcome='in_progress' "
-           + "AND EXISTS (SELECT 1 FROM tokens WHERE token_id=? AND version=? AND last_refresh_journal_id=?)")
-    .bind(finishedAt, journalId, token.token_id, token.version + 1, journalId),
+  // ① journal: 조건은 토큰의 pre-state 뿐이다 (앞 문장이 쓴 값을 보지 않는다)
+  db.prepare("UPDATE token_refresh_journal SET outcome='applied', finished_at=? "
+           + "WHERE id=? AND outcome='in_progress' "
+           + "AND EXISTS (SELECT 1 FROM tokens WHERE token_id=? AND version=?)")
+    .bind(finishedAt, journalId, token.token_id, token.version),
+  // ② tokens: 같은 조건
+  db.prepare('UPDATE tokens SET ..., version = version + 1, last_refresh_journal_id=? '
+           + 'WHERE token_id=? AND version=?')...,
 ]);
-const tokenChanged   = (batch[0]?.meta?.changes ?? 0) > 0;
-const journalApplied = (batch[1]?.meta?.changes ?? 0) > 0;
-if (!tokenChanged || !journalApplied) { /* conflict → 토큰 차단, 관리자 재인증 필요 */ }
+const journalApplied = (batch[0]?.meta?.changes ?? 0) > 0;
+const tokenChanged   = (batch[1]?.meta?.changes ?? 0) > 0;   // ← 경합의 유일한 심판
+
+if (!tokenChanged) { /* ⑤ 충돌. journalApplied 가 true 면 기록을 되돌린다 */ }
+if (!journalApplied) { /* 토큰은 저장됐다 → 기록만 맞춘다. 멀쩡한 토큰을 차단하지 않는다 */ }
 ```
 
-두 번째 문장의 `EXISTS` 는 **첫 문장이 방금 쓴 `version + 1` 과 `last_refresh_journal_id`** 를 본다는 전제다.
-로컬 `node:sqlite` FakeD1 에서는 순차 실행이라 보인다. 원격 D1 의 batch 가 같은 보장을 하는지는 **확인하지 못했다**(§6).
+- **남은 가정은 하나뿐이다:** "D1 batch 는 트랜잭션이다" (두 문장이 같은 스냅샷을 보고 함께 적용되거나 함께 취소된다).
+  read-your-write 는 더 이상 필요 없다.
+- `last_refresh_journal_id` 는 계속 쓰지만 **판정에는 쓰지 않는다** — "지금 토큰이 어느 시도의 결과인지" 추적용이다.
+- 새 시험 2건이 원격 D1 의 다른 가시성을 흉내 낸다(④ batch 의 journal 문장만 바꿔치기).
+  `apps/hub/test/tokens.test.ts` — "journal 문장이 앞 문장 결과를 못 봐도 성공은 성공이다",
+  "기록만 '적용됨' 으로 어긋나도 판정은 토큰 쪽을 따르고 기록을 되돌린다". 변이 3건 추가(27/27 검출).
 
-- 이 전제가 틀리면: 갱신은 **성공했는데**(토큰 행은 새 값) `journalApplied === false` 라서 `conflict` 판정 → 토큰 차단 → 사람이 재인증해야 함. 즉 **모든 정상 갱신이 실패로 뒤집힌다.**
-- 내 생각의 수정안: 결과 판정은 `tokenChanged`(= `meta.changes`) **하나로만** 하고, 선기록(journal)은 그 뒤 별도 문장으로 맞춘다. 선기록이 `in_progress` 로 남는 것은 다음 실행의 "죽은 in_progress" 회수 경로가 이미 처리한다.
-- **판정 요청:** (a) 원격 D1 batch 의 read-your-write 보장 여부를 공식 문서로 확인해 달라. (b) 보장되더라도 이 이중 조건이 필요한가, 아니면 단일 조건이 더 안전한가.
-- 참고: `token.version` 만으로 "우리가 쓴 행"을 가릴 수 없어서 `last_refresh_journal_id` 를 넣은 것이다(시험으로 확인 — 그 사이 다른 실행이 쓴 것과 구분되지 않았다). 그 판단 자체도 봐 달라.
+**판정 요청**
+1. 두 문장의 조건이 정말 **동치**인가. 한쪽만 맞고 다른 쪽은 틀리는 입력·상태가 있는가?
+2. "batch 는 트랜잭션" 이 D1 공식 문서에서 실제로 보장되는가. 아니라면 어디까지가 보장인가?
+3. `!tokenChanged && journalApplied` 를 "있을 수 없는 상태" 로 본 판단이 맞는가. 이 경로에서 기록을
+   `conflict` 로 되돌리는 것이 안전한가, 아니면 `unknown`(차단)이 맞는가?
+4. 두 문장의 **순서**(journal 먼저, tokens 나중)가 다른 문제를 만드는가?
 
 ---
 
-### ② `app.js:323` — 시험용 시계 조작이 **운영 화면에 그대로 나간다** 🔴
+### ② 쇼룸 `?now=` — **고쳤다.** 막는 방식이 맞는지 봐 달라 (Z36)
 
-`apps/showroom/public/app.js:321–324`
+**1판에서 찾은 문제.** 시험용 시계 조작 `?now=YYYY-MM-DD` 가 배포본에 그대로 남아 있었다.
+쇼룸은 방문객이 보는 TV 화면이고 표시 여부는 `publish_from`·`expires_at` 으로만 정해진다.
+오프라인 회수 방어가 "게시 기간을 짧게 잡는 것" 하나뿐인데, 주소창 한 줄로 그 방어가 무너진다.
+
+**고친 방법 —** 로컬에서만 받는다.
 
 ```js
-// 시계 조작 시험용: ?now=YYYY-MM-DD 는 표시 기간 판단에만 쓴다
-const forced = params.get('now');
-const now = forced && /^\d{4}-\d{2}-\d{2}$/.test(forced) ? new Date(`${forced}T12:00:00Z`) : new Date();
+function forcedDate(hostname, search) {
+  const LOCAL = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '']);
+  if (!LOCAL.has(hostname)) return null;            // 배포 주소면 무조건 실제 시각
+  const forced = new URLSearchParams(search).get('now');
+  if (!forced || !/^\d{4}-\d{2}-\d{2}$/.test(forced)) return null;
+  const d = new Date(`${forced}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+// boot(): const now = forcedDate(location.hostname, location.search) ?? new Date();
 ```
 
-TV 쇼룸은 방문객이 보는 화면이고, 표시 여부는 `publish_from`·`expires_at` 으로 정해진다.
-이 파라미터가 배포본에 남으면 **주소창만 고치면 승인 기간 밖 콘텐츠(만료된 것·게시 전인 것)를 띄울 수 있다.**
+- `forcedDate` 를 내보내서 **호스트별로 직접 시험**한다(시험 7건). 화면 시험은 `127.0.0.1` 이라 그대로 돈다.
+- 코드 규칙 시험 2건이 회귀를 막는다: `?now` 를 읽는 곳이 `forcedDate()` **한 군데뿐**이고,
+  호스트 검사 없이 `location.search` 에서 바로 읽지 않는다.
 
-- 완화 요소: `status: "draft"`·`"withdrawn"` 은 이 경로로도 안 보인다. 기간(`published` + 날짜)만 우회된다. 쇼룸 URL 은 공개 주소가 아니고 화면에 적지 않는다.
-- 그래도 "회수는 기간을 짧게 잡는 것이 유일한 방어"라고 README 에 써 놓은 것과 정면으로 어긋난다.
-- 내 생각의 수정안: 빌드 시점에 제거하거나(시험용 빌드에만 포함), 표시 규칙 함수 `visibleItems(content, today)` 만 시험에서 직접 부르고 화면 코드에서는 파라미터를 읽지 않는다.
-- **판정 요청:** 이게 실제로 막아야 할 구멍인가, 아니면 과한 걱정인가. 막는다면 어느 쪽이 나은가.
+**판정 요청**
+1. 호스트 검사만으로 충분한가. 빠뜨린 로컬 호스트나, 반대로 **배포본에서 로컬로 보이는** 경우가 있는가?
+2. 아예 빌드 시점에 제거하는 편이 나은가 (그러면 화면 시험에서 표시 기간을 확인할 수 없다)?
+3. 표시 규칙(`visibleItems`)에 `?now=` 말고 다른 우회 경로가 남아 있는가?
 
 ---
 
@@ -213,9 +247,10 @@ Ajv standalone 출력에 `require("ajv/dist/runtime/ucs2length")` 가 들어가�
 |---|---|---|---|---|
 | Z13 | R4 §1.6 | `SYS.UPTIME` = 16개 시스템 24시간 가용률 | **현재 DOWN 앱 수**만 | 이력 표가 없고 점검 대상이 9개다. 이력 표 설계는 Phase 2 |
 | Z14 | R4 §2.1 ⑥ | KPI 조회를 `audit_log` 해시 체인에 기록 | 체인에 넣지 않고 `kpi_read` **구조화 로그만** | 조회마다 체인에 쓰면 경합·용량이 커진다. **감사 보존 기간이 아직 미결정** → 보류 |
-| Z23 | R2 `[재확인 필요]` | (미정) | ④ + journal `applied` 를 **조건부 SQL 한 batch** 로. "우리가 쓴 행" 판정은 선기록 id | §4 ① 참조 — **여기를 제일 의심한다** |
+| Z23→**Z35** | R2 `[재확인 필요]` | (미정) | ④ + journal `applied` 를 **조건부 SQL 한 batch** 로. 두 문장이 **같은 pre-state** 만 본다 | §4 ① 참조 — 1판의 선기록 id 방식을 버렸다 |
 | Z24 | R2 에 구분 없음 | (없음) | 2xx + 파싱 실패 = `unknown`(차단) / 비-2xx = `failed`(재시도 가능) | 2xx 면 회전이 일어났을 수 있다. 차단하면 재인증이 필요하고, 안 하면 죽은 토큰으로 계속 시도한다 |
 | Z29 | R2 §1.4 ⑥ | `'1970-01-01T00:00:00Z'` | `'1970-01-01T00:00:00.000Z'` | 시각 형식 통일(불변식 3). 섞이면 문자열 비교가 틀어진다 |
+| **Z36** | (문서에 없음) | (없음) | 쇼룸 `?now=` 를 **로컬에서만** 받는다 | §4 ② 참조 — 배포본에서 승인 기간 우회를 막는다 |
 
 이 5건은 **근거를 적어 두고 의도적으로 다르게 간 것**이다. "문서와 다르다"는 지적만으로는 결함이 아니다 —
 **다르게 간 쪽이 실제로 틀린 결과를 내는 경우**를 보여 주면 고친다.
@@ -241,7 +276,7 @@ Ajv standalone 출력에 `require("ajv/dist/runtime/ucs2length")` 가 들어가�
 
 | # | 항목 | 지금 어떻게 해 두었나 | 원하는 답 |
 |---|---|---|---|
-| 1 | **원격 D1 batch 안에서 앞 문장 결과를 뒤 문장이 보는가** | 보인다고 가정 + `meta.changes` 이중 확인 | **공식 문서 근거.** §4 ① 의 전제다 |
+| 1 | **원격 D1 batch 가 트랜잭션인가** (앞 문장 결과 가시성에는 **더 이상 기대지 않는다** — Z35) | 두 문장이 같은 pre-state 만 본다 | **공식 문서 근거.** 지금 남은 유일한 가정이다 |
 | 2 | Access 그룹 목록 응답에 `result_info` 가 있는가 | 있으면 쓰고, 없으면 "마지막 쪽이 `per_page` 미만"으로 판정(양쪽 시험) | 실제 응답 모양 |
 | 3 | `require` 규칙의 실제 형태 | 로그인 방식 조건(`login_method`·`auth_method`)만 허용, 구성원 계산에 쓰지 않음. 그 밖은 전체 실패 | 실제 Access 설정에서 쓰이는 규칙 종류 |
 | 4 | `email_list` 규칙 | **지원 안 함 → 실패 처리.** 목록 조회 API 를 공식 문서로 확인 못 했다 | 목록 조회 API 존재 여부 |
@@ -255,13 +290,13 @@ Ajv standalone 출력에 `require("ajv/dist/runtime/ucs2length")` 가 들어가�
 | 명령 | 결과 |
 |---|---|
 | `npm test -w packages/contracts` | 사례 **85건 · 불일치 0** / 변이 **60/60** / 의미 **17/17** / Worker **17/17** / ID **21/21** |
-| `npm test -w apps/hub` | 11파일 **245/245** |
+| `npm test -w apps/hub` | 11파일 **247/247** |
 | `npm run typecheck -w apps/hub` | 오류 **0** |
-| `npm run test:mutation -w apps/hub` | **24/24** 검출 · 미검출 0 |
+| `npm run test:mutation -w apps/hub` | **27/27** 검출 · 미검출 0 |
 | `npm run test:bundle -w apps/hub` | **9/9** · 금지 구문 0건 |
-| `npm run build:dry -w apps/hub` | 605.97 KiB (gzip 94.47) — 기록만 |
+| `npm run build:dry -w apps/hub` | 605.9 KiB — 기록만 |
 | `npm run test:ui -w apps/hub` | 화면 14장 + 흐름 1 · 콘솔 오류 0 |
-| `npm test -w apps/showroom` | **29/29** · 콘텐츠 문제 0건 |
+| `npm test -w apps/showroom` | **38/38** · 콘텐츠 문제 0건 |
 | `npm run test:ui -w apps/showroom` | **27/27** · 캡처 7장 · **외부 요청 0건** · 콘솔 오류 0 |
 | `npm ci` (새 사본) | 통과 |
 
@@ -307,7 +342,7 @@ Ajv standalone 출력에 `require("ajv/dist/runtime/ucs2length")` 가 들어가�
 |---|---|
 | `apps/hub/migrations/0004_groupsync.sql` | `c844c1ee96b0` |
 | `apps/hub/migrations/0005_kpi.sql` | `99f3d313cba3` |
-| `apps/hub/migrations/0006_tokens.sql` | `617a61105d0b` |
+| `apps/hub/migrations/0006_tokens.sql` | `8a37dd079ffa` |
 | `packages/contracts/schema/kpi-summary-v1.2.json` | `8ed9ab2ece1f` (바뀌지 않음) |
 | `packages/contracts/src/generated/schema-validator.mjs` | `9ea7420e6f2f` |
 | `packages/contracts/src/generated/schema-meta.mjs` | `8fa98dd8a1ec` |
@@ -315,6 +350,8 @@ Ajv standalone 출력에 `require("ajv/dist/runtime/ucs2length")` 가 들어가�
 | `apps/hub/docs/kpi-response.schema.json` | `33585bc588b2` |
 | `apps/showroom/content/manifest.schema.json` | `854b9f83cf51` |
 | `apps/showroom/content/manifest.json` | `bb8fac7f0cdc` |
+| `apps/hub/src/tokens/refresh.ts` (§4 ①) | `5655a374fc72` |
+| `apps/showroom/public/app.js` (§4 ②) | `db141430dea5` |
 
 스키마 해시는 사전 컴파일 검사기 안에도 들어 있다 — 스키마를 고치고 `build:validator` 를 다시 돌리지 않으면 시험이 실패한다.
 

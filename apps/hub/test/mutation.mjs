@@ -63,6 +63,24 @@ const MUTANTS = [
     'if (Date.parse(leaseUntil) - now.getTime() < timeoutMs + marginMs) {',
     'if (false) {',
   ],
+  [
+    'tokens: ④ 판정을 토큰이 아니라 journal 쪽 결과로 한다',
+    'src/tokens/refresh.ts',
+    'const tokenChanged = (batch[1]?.meta?.changes ?? 0) > 0;',
+    'const tokenChanged = (batch[0]?.meta?.changes ?? 0) > 0;',
+  ],
+  [
+    'tokens: ④ 어긋난 기록 맞추기 제거 (멀쩡한 토큰이 차단된다)',
+    'src/tokens/refresh.ts',
+    '  if (!journalApplied) {',
+    '  if (false && !journalApplied) {',
+  ],
+  [
+    'tokens: ⑤ 어긋난 기록 되돌리기 제거',
+    'src/tokens/refresh.ts',
+    "{ reason: 'version_conflict', expected_version: token.version }, 'any');",
+    "{ reason: 'version_conflict', expected_version: token.version });",
+  ],
   ['tokens: 차단 규칙 제거', 'src/tokens/refresh.ts', '  if (block !== null) {', '  if (false && block !== null) {'],
   ['tokens: 기본 꺼짐 무시', 'src/tokens/refresh.ts', "return env.TOKEN_REFRESH_ENABLED === 'true';", "return env.TOKEN_REFRESH_ENABLED !== 'true';"],
 ];

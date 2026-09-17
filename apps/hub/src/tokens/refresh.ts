@@ -7,7 +7,7 @@
 //  ②  남은 시간 확인   요청 제한 + 여유보다 짧으면 요청을 보내지 않고 ⑥ 으로 해제
 //  ②-1 시작 기록      외부 요청 **전에** journal 을 in_progress 로. 실패하면 요청을 보내지 않는다
 //  ③  응답 선기록      응답 본문을 **파싱하기 전에** 암호문으로 먼저 기록
-//  ④  버전 조건 저장   version 이 그대로일 때만 저장 + 같은 batch 에서 journal applied
+//  ④  버전 조건 저장   version 이 그대로일 때만 저장 + 같은 batch·같은 조건으로 journal applied
 //  ⑤  충돌            ④ 가 0행이면 journal conflict 로 두고 새 토큰을 버리지 않는다
 //  ⑥  실행권 해제      자기가 쥔 실행권만 푼다
 //
@@ -312,9 +312,22 @@ export async function refreshOne(
   }
 
   // ④ 버전 조건 저장 + journal applied 를 한 batch 로
+  //
+  // 두 문장은 **같은 pre-state(version = token.version)** 만 조건으로 본다.
+  // 앞 문장이 쓴 값을 뒤 문장이 보는지(read-your-write)에 기대지 않기 위해서다 —
+  // batch 는 트랜잭션이므로 두 문장이 같은 스냅샷을 보고 함께 적용되거나 함께 취소된다.
+  // (예전에는 journal 쪽에서 앞 문장이 쓴 version+1·last_refresh_journal_id 를 EXISTS 로 확인했다.
+  //  원격 D1 이 batch 안에서 그 가시성을 보장하지 않으면 **성공한 갱신이 전부 conflict 로 뒤집힌다.**)
+  //
+  // 판정은 토큰 UPDATE 의 meta.changes **하나로만** 한다 — 경합의 심판은 그것뿐이다.
   const sealedToken = await seal(key, parsed.refreshToken);
   const finishedAt = iso(deps.now());
   const batch = await db.batch([
+    db
+      .prepare(
+        "UPDATE token_refresh_journal SET outcome = 'applied', finished_at = ? WHERE id = ? AND outcome = 'in_progress' AND EXISTS (SELECT 1 FROM tokens WHERE token_id = ? AND version = ?)",
+      )
+      .bind(finishedAt, journalId, token.token_id, token.version),
     db
       .prepare(
         'UPDATE tokens SET ciphertext = ?, iv = ?, key_version = ?, version = version + 1, expires_at = ?, updated_at = ?, last_refresh_journal_id = ? WHERE token_id = ? AND version = ?',
@@ -329,25 +342,27 @@ export async function refreshOne(
         token.token_id,
         token.version,
       ),
-    // **우리가 쓴 그 행**일 때만 applied 로 적는다.
-    // version 이나 시각만 보면 그 사이 다른 실행이 쓴 것과 구분할 수 없으므로
-    // 이 시도의 선기록 id 가 토큰 행에 남아 있는지로 가린다(선기록 id 는 시도마다 유일하다).
-    // [재확인 필요] 원격 D1 batch 안에서 앞 문장의 결과를 뒤 문장이 보는지 — G02 운영 검증 대기
-    db
-      .prepare(
-        "UPDATE token_refresh_journal SET outcome = 'applied', finished_at = ? WHERE id = ? AND outcome = 'in_progress' AND EXISTS (SELECT 1 FROM tokens WHERE token_id = ? AND version = ? AND last_refresh_journal_id = ?)",
-      )
-      .bind(finishedAt, journalId, token.token_id, token.version + 1, journalId),
   ]);
-  const tokenChanged = (batch[0]?.meta?.changes ?? 0) > 0;
-  const journalApplied = (batch[1]?.meta?.changes ?? 0) > 0;
+  const journalApplied = (batch[0]?.meta?.changes ?? 0) > 0;
+  const tokenChanged = (batch[1]?.meta?.changes ?? 0) > 0;
 
-  if (!tokenChanged || !journalApplied) {
+  if (!tokenChanged) {
     // ⑤ 충돌: 새 토큰은 선기록에 남아 있다(버리지 않는다)
-    await finishJournal(db, journalId, 'conflict', deps.now(), { reason: 'version_conflict', expected_version: token.version });
+    if (journalApplied) {
+      // 조건이 같은데 어긋났다 = 있을 수 없는 상태. 기록이 '적용됨' 으로 남으면 차단 규칙이 이 시도를 놓친다.
+      console.error('token_journal_mismatch', token.token_id, 'applied_without_token');
+    }
+    await finishJournal(db, journalId, 'conflict', deps.now(), { reason: 'version_conflict', expected_version: token.version }, 'any');
     await audit(db, token, 'token_refresh_conflict', { expected_version: token.version }, deps.now(), requestId);
     await release();
     return done('conflict', true);
+  }
+
+  if (!journalApplied) {
+    // 토큰은 저장됐는데 기록이 in_progress 로 남았다 = 있을 수 없는 상태.
+    // 그대로 두면 실행권이 끝난 뒤 차단 규칙이 **멀쩡한 토큰을 막는다** → 기록만 맞춘다.
+    console.error('token_journal_mismatch', token.token_id, 'token_without_applied');
+    await finishJournal(db, journalId, 'applied', deps.now(), { reason: 'journal_repaired' });
   }
 
   await release();
@@ -360,11 +375,12 @@ async function finishJournal(
   outcome: 'applied' | 'conflict' | 'failed' | 'unknown',
   now: Date,
   detail: Record<string, unknown>,
+  /** 기본은 in_progress 인 행만 닫는다. 'any' 는 어긋난 기록을 되돌릴 때만 쓴다(⑤). */
+  from: 'in_progress' | 'any' = 'in_progress',
 ): Promise<void> {
+  const where = from === 'any' ? 'WHERE id = ?' : "WHERE id = ? AND outcome = 'in_progress'";
   await db
-    .prepare(
-      "UPDATE token_refresh_journal SET outcome = ?, finished_at = ?, detail_json = json_patch(detail_json, ?) WHERE id = ? AND outcome = 'in_progress'",
-    )
+    .prepare(`UPDATE token_refresh_journal SET outcome = ?, finished_at = ?, detail_json = json_patch(detail_json, ?) ${where}`)
     .bind(outcome, iso(now), JSON.stringify(detail), journalId)
     .run();
 }

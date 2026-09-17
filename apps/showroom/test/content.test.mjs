@@ -94,6 +94,9 @@ check('frame-ancestors 는 헤더로 준다 (meta 로는 무시된다)', !html.i
 check('숨긴 요소가 실제로 숨겨진다', css.includes('.index-overlay[hidden]') && css.includes('display: none'));
 check('#9898A0 를 글자색으로 쓰지 않는다', !/color:\s*#9898a0/i.test(css));
 check('EBU R 95 안전 여백 5% 를 쓴다', css.includes('--safe: 5%') && css.includes('tech.ebu.ch/publications/r095'));
+// 시계 조작(?now=)은 로컬에서만. 배포본에서 받으면 주소창으로 승인 기간을 우회할 수 있다.
+check('?now= 를 읽는 곳이 forcedDate() 한 군데뿐이다', (appCode.match(/get\('now'\)/g) ?? []).length === 1);
+check('?now= 가 호스트 검사 없이 쓰이지 않는다', !/location\.search\)\.get\('now'\)/.test(appCode));
 
 // wrangler 설정: D1·비밀값·Access 없음
 const wrangler = read('wrangler.jsonc');
@@ -133,6 +136,20 @@ if (mod?.visibleItems) {
   check('게시 시작 전에는 아무것도 안 나온다', past.length === 0, past.join(','));
 } else {
   check('app.js 의 표시 조건 함수를 불러올 수 있다', false);
+}
+
+// ---------- 6. 시계 조작(?now=)은 로컬에서만 ----------
+if (mod?.forcedDate) {
+  const f = mod.forcedDate;
+  check('로컬에서는 ?now= 를 받는다', f('127.0.0.1', '?now=2020-01-01')?.toISOString() === '2020-01-01T12:00:00.000Z');
+  check('localhost 도 받는다', f('localhost', '?now=2099-01-01') instanceof Date);
+  check('배포 주소에서는 ?now= 를 무시한다 (workers.dev)', f('fm-one-showroom.workers.dev', '?now=2020-01-01') === null);
+  check('배포 주소에서는 ?now= 를 무시한다 (사내 주소)', f('show.example.invalid', '?now=2099-01-01') === null);
+  check('로컬이어도 형식이 틀리면 무시한다', f('127.0.0.1', '?now=2020-1-1') === null && f('127.0.0.1', '?now=abc') === null);
+  check('없는 날짜는 무시한다', f('127.0.0.1', '?now=2026-02-31') === null || f('127.0.0.1', '?now=2026-13-01') === null);
+  check('?now= 가 없으면 null (실제 시각을 쓴다)', f('127.0.0.1', '') === null);
+} else {
+  check('app.js 의 forcedDate() 를 불러올 수 있다', false);
 }
 
 const failed = results.filter((r) => !r.ok).length;

@@ -10,8 +10,8 @@ ALTER TABLE token_refresh_journal ADD COLUMN key_version INTEGER;
 ALTER TABLE token_refresh_journal ADD COLUMN lease_until TEXT;
 
 -- 토큰을 마지막으로 바꾼 선기록 id.
---   ④ 저장과 journal applied 를 한 batch 로 묶을 때 "우리가 쓴 그 행" 인지 가리는 데 쓴다.
---   version 이나 시각만으로는 그 사이 다른 실행이 쓴 것과 구분할 수 없다.
+--   지금 저장된 토큰이 **어느 시도의 결과인지** 추적하는 데 쓴다(복구·조사용).
+--   판정에는 쓰지 않는다 — ④ 의 조건부 UPDATE 가 몇 행을 바꿨는지(meta.changes)가 경합의 유일한 심판이다.
 ALTER TABLE tokens ADD COLUMN last_refresh_journal_id INTEGER;
 
 -- 토큰별 마지막 선기록을 빨리 찾기 위한 색인 (차단 규칙이 매번 본다)
