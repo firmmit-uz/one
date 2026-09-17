@@ -25,7 +25,12 @@ export interface EnvelopeKpi {
   quality?: { level: 'verified' | 'unverified' | 'estimated'; flags?: string[] };
   breakdown?: { key: string; measure: Measure }[];
   sensitivity?: 'internal' | 'department' | 'finance';
-  error?: { code: 'NOT_IMPLEMENTED' | 'DEFINITION_PENDING' | 'DATA_NOT_CENTRALIZED'; retryable: boolean; detail?: string };
+  // 계약 v1.2 의 오류 코드 목록 (schema/kpi-summary-v1.2.json 의 error.code enum)
+  error?: {
+    code: 'SOURCE_TIMEOUT' | 'SOURCE_AUTH' | 'SOURCE_RATE_LIMIT' | 'SOURCE_SCHEMA' | 'UPSTREAM_DOWN' | 'NOT_IMPLEMENTED' | 'DEFINITION_PENDING' | 'DATA_NOT_CENTRALIZED';
+    retryable: boolean;
+    detail?: string;
+  };
 }
 
 export interface Envelope {
@@ -156,6 +161,55 @@ export function phase0Kpi(rows: Phase0Row[], now: Date): EnvelopeKpi {
       ...[...rows].sort((a, b) => a.sort - b.sort).map((r) => ({ key: `item:${r.item_id}`, measure: state(r.state.toUpperCase()) })),
     ],
     sensitivity: 'internal',
+  };
+}
+
+// ---------------------------------------------------------------- SYS.TOKEN_EXPIRY (WP3)
+
+export interface TokenStatusInput {
+  token_id: string;
+  provider: string;
+  state: 'ok' | 'expiring' | 'conflict' | 'unknown' | 'running' | 'no_data';
+}
+
+/**
+ * 연동 토큰 상태. 값 = 만료 임박(72시간 안) 토큰 수.
+ * 충돌·확인 불가(P1 상황)가 하나라도 있으면 error 로 표시한다 — 알림 발송은 없다(Phase 3).
+ * 계약상 error 일 때는 모든 값이 null 이어야 하므로 그때는 세부를 붙이지 않는다.
+ */
+export function tokenExpiryKpi(rows: TokenStatusInput[], now: Date): EnvelopeKpi {
+  const p1 = rows.filter((r) => r.state === 'conflict' || r.state === 'unknown');
+  const base = {
+    kpi_id: 'SYS.TOKEN_EXPIRY',
+    definition_version: '1.0',
+    period: { type: 'instant', tz: 'UTC' } as const,
+    updated_at: now.toISOString(),
+    data_as_of: now.toISOString(),
+    quality: { level: 'verified' as const, flags: [] },
+    sensitivity: 'internal' as const,
+  };
+  if (p1.length > 0) {
+    return {
+      ...base,
+      status: 'error',
+      measure: count(null),
+      // 계약의 오류 코드 중 "연동 인증이 끊긴 상태" 에 가장 가까운 것을 쓴다.
+      // 토큰 값·암호문은 넣지 않는다(토큰 ID 와 상태만).
+      error: {
+        code: 'SOURCE_AUTH',
+        retryable: false,
+        detail: p1.map((r) => `${r.token_id}:${r.state}`).join(',').slice(0, 200),
+      },
+    };
+  }
+  return {
+    ...base,
+    status: 'ok',
+    measure: count(rows.filter((r) => r.state === 'expiring').length),
+    breakdown: [
+      { key: 'total', measure: count(rows.length) },
+      ...rows.slice(0, 48).map((r) => ({ key: `token:${r.token_id}`, measure: state(r.state.toUpperCase()) })),
+    ],
   };
 }
 

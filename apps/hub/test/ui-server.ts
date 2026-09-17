@@ -47,6 +47,8 @@ if (AUTO_SYNC) {
 
 // WP2: 홈 화면 KPI (가짜 값 — 실제 운영 수치 아님)
 import { refreshInternalKpis } from '../src/kpi/gateway';
+// WP3: 관리 화면 토큰 상태 (가짜 값)
+import { createTokenStmts } from '../src/tokens/refresh';
 
 const up = sqlite.prepare(
   'INSERT INTO uptime_state (app_id, state, consecutive_failures, last_checked_at, last_change_at, last_status_code) VALUES (?, ?, ?, ?, ?, ?)',
@@ -79,6 +81,30 @@ function staticHeaders(): Record<string, string> {
 }
 const HEADERS = staticHeaders();
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+
+// WP3 자동 갱신 화면(AUTOSYNC=1)에서만 가짜 토큰 1건을 보여준다 (암호문은 시험용 더미)
+if (AUTO_SYNC) {
+  for (const st of createTokenStmts(
+    d1 as unknown as D1Database,
+    {
+      token_id: 'cafe24:main',
+      provider: 'cafe24',
+      account_ref: 'mall:<MALL_ID>',
+      ciphertext: new Uint8Array([1, 2, 3, 4]),
+      iv: new Uint8Array(12),
+      key_version: 1,
+      expires_at: iso(36 * 60 * 60_000),
+    },
+    now.toISOString(),
+  )) {
+    await st.run();
+  }
+  sqlite
+    .prepare(
+      "INSERT INTO token_refresh_journal (token_id, holder, started_at, finished_at, outcome, detail_json, lease_until) VALUES ('cafe24:main', 'ui', ?, ?, 'applied', '{}', ?)",
+    )
+    .run(iso(-3_600_000), iso(-3_599_000), iso(-3_300_000));
+}
 
 // 서버가 뜨기 전에 KPI 캐시를 한 번 채운다 (STALE=1 이면 15분을 넘겨 "지연" 으로 보이게 한다)
 const kpiAt = process.env.STALE === '1' ? new Date(now.getTime() - 45 * 60_000) : now;

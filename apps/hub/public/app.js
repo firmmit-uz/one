@@ -558,9 +558,55 @@ async function viewAdmin(main) {
     return;
   }
   const usersBox = el('section', { class: 'panel' });
+  const tokenBox = el('section', { class: 'panel' });
   const auditBox = el('section', { class: 'panel' });
-  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, auditBox);
-  await Promise.all([renderUsers(usersBox), renderAudit(auditBox)]);
+  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, tokenBox, auditBox);
+  await Promise.all([renderUsers(usersBox), renderTokens(tokenBox), renderAudit(auditBox)]);
+}
+
+// WP3: 연동 토큰 상태. 토큰 값·암호문은 서버가 내려보내지 않는다.
+const TOKEN_BADGE = {
+  ok: ['state-up', '✓'],
+  expiring: ['warn', '!'],
+  conflict: ['state-down', '✕'],
+  unknown: ['state-down', '?'],
+  running: ['muted', '⟳'],
+  no_data: ['muted', '·'],
+};
+
+async function renderTokens(box) {
+  put(box, sectionHead(t('tokens_title')), loading());
+  let data;
+  try {
+    data = await api('/api/admin/tokens');
+  } catch (err) {
+    put(box, sectionHead(t('tokens_title')), errorBox(err, () => renderTokens(box)));
+    return;
+  }
+  const mode = data.enabled ? badge('role', t('tokens_on'), '⟳') : badge('muted', t('tokens_off'), 'i');
+  const rows = (data.tokens || []).map((tk) => {
+    const [kind, icon] = TOKEN_BADGE[tk.state] || ['muted', '?'];
+    return el(
+      'tr',
+      {},
+      el('td', {}, el('code', { text: tk.token_id })),
+      el('td', { text: tk.provider }),
+      el('td', {}, badge(kind, t(`token_state_${tk.state}`), icon)),
+      el('td', { text: fmtTime(tk.expires_at) }),
+      el('td', { text: tk.last_outcome ? t(`token_outcome_${tk.last_outcome}`) : t('none') }),
+      el('td', { text: fmtTime(tk.last_attempt_at) }),
+    );
+  });
+  put(box,
+    sectionHead(t('tokens_title'), mode),
+    rows.length
+      ? table([t('col_token'), t('col_provider'), t('col_state'), t('col_expires'), t('col_last_outcome'), t('col_last_attempt')], rows, {
+          label: t('tokens_title'),
+          stack: true,
+        })
+      : el('p', { class: 'empty', text: t('tokens_empty') }),
+    el('p', { class: 'meta', text: t('tokens_note') }),
+  );
 }
 
 async function renderUsers(box) {

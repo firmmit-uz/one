@@ -3,12 +3,14 @@
 // 흐름: 봉투 생성 → 계약 v1.2 검증 → kpi_def 기준 stale 재계산 → kpi_cache 저장
 //       → 요청자 그룹으로 필터(권한 없는 KPI 는 응답에서 아예 제거) → 표시용 필드 추가
 import type { Principal } from '../authz';
+import { tokenStatuses } from '../tokens/refresh';
 import {
   buildAndValidate,
   cacheStmt,
   makeEnvelope,
   phase0Kpi,
   staleCountKpi,
+  tokenExpiryKpi,
   unavailableKpi,
   uptimeKpi,
   type EnvelopeKpi,
@@ -241,10 +243,15 @@ export async function refreshInternalKpis(db: D1Database, environment: string, d
   const phase0 = (phaseRes?.results ?? []) as unknown as Phase0Row[];
   const visibility = (visRes?.results ?? []) as unknown as KpiVisibilityRow[];
 
+  // WP3: 토큰 행이 있으면 SYS.TOKEN_EXPIRY 가 실제 값을 낸다. 없으면 "준비 중" 카드 그대로.
+  const tokens = await tokenStatuses(db, now);
   const first: EnvelopeKpi[] = [
     uptimeKpi(uptimeRows, now),
     phase0Kpi(phase0, now),
-    ...UNAVAILABLE_KPIS.map((id) => unavailableKpi(id, now, UNAVAILABLE_DETAIL[id])),
+    ...UNAVAILABLE_KPIS.filter((id) => !(id === 'SYS.TOKEN_EXPIRY' && tokens.length > 0)).map((id) =>
+      unavailableKpi(id, now, UNAVAILABLE_DETAIL[id]),
+    ),
+    ...(tokens.length > 0 ? [tokenExpiryKpi(tokens, now)] : []),
   ];
 
   const rejected: RefreshResult['rejected'] = [];

@@ -4,6 +4,7 @@ import { checkConfig } from './config';
 import type { Env } from './env';
 import { GROUP_SYNC_CRON, runGroupSync } from './groupsync';
 import { refreshInternalKpis } from './kpi/gateway';
+import { refreshAllTokens, TOKEN_REFRESH_CRON } from './tokens/refresh';
 import { runUptimeChecks } from './uptime';
 
 const app = createApp();
@@ -11,9 +12,10 @@ const app = createApp();
 export const UPTIME_CRON = '*/5 * * * *';
 
 /** Cron 값으로 작업을 나눈다. 모르는 값은 경고만 남기고 아무것도 하지 않는다. */
-export function cronJob(cron: string): 'uptime' | 'group_sync' | null {
+export function cronJob(cron: string): 'uptime' | 'group_sync' | 'token_refresh' | null {
   if (cron === UPTIME_CRON) return 'uptime';
   if (cron === GROUP_SYNC_CRON) return 'group_sync';
+  if (cron === TOKEN_REFRESH_CRON) return 'token_refresh';
   return null;
 }
 
@@ -51,10 +53,20 @@ export default {
       );
       return;
     }
+    if (job === 'group_sync') {
+      ctx.waitUntil(
+        runGroupSync(env.DB, env, deps).then(
+          (r) => console.log('group_sync_done', JSON.stringify(r)),
+          (e: unknown) => console.error('group_sync_failed', e instanceof Error ? e.name : 'unknown'),
+        ),
+      );
+      return;
+    }
+    // 토큰 갱신 (기본 꺼짐. 켜져 있어도 토큰 행이 없으면 아무것도 하지 않는다)
     ctx.waitUntil(
-      runGroupSync(env.DB, env, deps).then(
-        (r) => console.log('group_sync_done', JSON.stringify(r)),
-        (e: unknown) => console.error('group_sync_failed', e instanceof Error ? e.name : 'unknown'),
+      refreshAllTokens(env.DB, env, { now: deps.now }).then(
+        (r) => console.log('token_refresh_done', JSON.stringify(r)),
+        (e: unknown) => console.error('token_refresh_failed', e instanceof Error ? e.name : 'unknown'),
       ),
     );
   },

@@ -148,8 +148,9 @@ describe('WP1 설정', () => {
   it('Cron 값으로 작업을 나눈다 (모르는 값은 null)', () => {
     expect(cronJob(UPTIME_CRON)).toBe('uptime');
     expect(cronJob(GROUP_SYNC_CRON)).toBe('group_sync');
-    expect(cronJob('0 * * * *')).toBeNull();
+    expect(cronJob('0 * * * *')).toBe('token_refresh'); // WP3 에서 추가
     expect(cronJob('')).toBeNull();
+    expect(cronJob('25 23 * * *')).toBeNull(); // R1 계획의 T-DAY 는 아직 없다
   });
 });
 

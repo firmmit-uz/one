@@ -9,6 +9,9 @@ export interface Env {
   // WP1 그룹 동기화: 계정 ID 는 vars(자리표시자), API 토큰은 Worker Secret(읽기 전용 권한만)
   CF_ACCOUNT_ID?: string;
   CF_API_TOKEN?: string;
+  // WP3 토큰 갱신: 기본 꺼짐("true" 외의 값은 모두 꺼짐). 암호화 키는 Worker Secret.
+  TOKEN_REFRESH_ENABLED?: string;
+  TOKEN_KEY_V1?: string;
 }
 
 export const ROLES = ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN'] as const;

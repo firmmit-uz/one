@@ -15,6 +15,7 @@ import {
 } from './groupsync';
 import { ApiError, errorIncludes, jsonError } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
+import { isEnabled as isTokenRefreshEnabled, tokenStatuses } from './tokens/refresh';
 import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
 
 const GROUP_RE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -333,6 +334,14 @@ export function adminRoutes() {
     );
     return c.json({ item });
   });
+
+  // 연동 토큰 상태 (WP3). **토큰 값·암호문은 절대 내려보내지 않는다.**
+  r.get('/tokens', async (c) =>
+    c.json({
+      enabled: isTokenRefreshEnabled(c.env),
+      tokens: await tokenStatuses(c.env.DB, c.get('now')),
+    }),
+  );
 
   r.get('/audit', async (c) => {
     const q = c.req.query();

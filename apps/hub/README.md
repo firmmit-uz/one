@@ -57,6 +57,7 @@ apps/hub/
 | `POST /api/admin/grants` | Access | 허브 ADMIN | `{email, app_id, role, scope?, expires_at?, reason?}` |
 | `POST /api/admin/grants/:id/revoke` | Access | 허브 ADMIN | `{reason?}` (자기 허브 ADMIN 회수 금지) |
 | `POST /api/admin/group-snapshot` | Access | 허브 ADMIN | 그룹 사본 **전체 교체** `{groups:[{group_name, emails[]}], reason?}`. **자동 동기화가 설정돼 있으면 409 `auto_sync_enabled`** |
+| `GET /api/admin/tokens` | Access | 허브 ADMIN | 연동 토큰 **상태만**(값·암호문 미포함) + 자동 갱신 켜짐 여부 |
 | `GET /api/admin/phase0` | Access | 허브 ADMIN | 게이트 G1 체크리스트 14개 + 통과 수 |
 | `POST /api/admin/phase0/:item_id` | Access | 허브 ADMIN | `{state: pending\|passed\|failed\|na, evidence_ref?, reason?}`. `passed`는 증적 참조 필수, 증적에 주소·이메일·비밀값 형태 금지 |
 | `GET /api/admin/audit?limit=&before=` | Access | 허브 ADMIN | 감사기록 (최대 500) |
@@ -110,7 +111,7 @@ npm run dev          # = wrangler dev --env development → http://localhost:878
 cd apps/hub
 npm test                 # vitest (node:sqlite 로 실제 마이그레이션 실행)
 npm run typecheck        # tsc --noEmit (src) + tsconfig.test.json (src+test)
-npm run test:mutation    # 변이 19개 — 미검출 시 exit 1
+npm run test:mutation    # 변이 24개 — 미검출 시 exit 1
 npm run test:bundle      # build:dry 실행 후 번들에 eval·new Function·node: 없음 확인
 npm run test:ui          # Playwright(Chromium) 스크린샷 → test/screens/, 실패 시 exit 1
 npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 불필요)
@@ -125,6 +126,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 | 런처 | 권한별 필터, 미연결 = url 없음, 공개 사이트 전원, `javascript:` 주소 방어 |
 | 가용성 | 1회 실패 UP 유지 → 2회 DOWN → 계속 DOWN → 복구 UP, 변화 때만 감사, HEAD 405→GET, 리다이렉트 미추적, 시간 초과, scheduled 설정 오류 시 미실행 |
 | KPI | 내부 KPI 봉투가 계약 v1.2 통과, ONE 이 `kpi_def` 기준으로 stale 재계산(기준 시각 해석 실패 = stale), 상태 우선순위, 권한 없는 KPI는 응답에서 제거·개별 조회 404, 그룹에서 빠지면 다음 조회에 사라짐, 요약/상세 breakdown 구분, 깨지거나 모양이 다른 캐시는 내보내지 않음, 마지막 정상 시각 보존, 조회는 감사 체인 대신 구조화 로그, 가짜 소스 왕복(정상·스키마 위반·제한시간·소스 다운·통화 혼합·personal·null≠0), 응답이 `docs/kpi-response.schema.json` 통과 |
+| 토큰 갱신 | 기본 꺼짐(`"true"` 외 전부 꺼짐)·키 없음·토큰 없음·실행권 행 없음 → 외부 호출 0건, ① 동시 실행 2개 중 하나만, ② 남은 시간 부족 시 요청 없이 해제, ②-1 시작 기록 실패 시 요청 없음, ③ 파싱 전 선기록(깨진 응답에서도 남음), ④ 버전 조건·⑤ 충돌 보존(남의 값 덮어쓰지 않음), ⑥ 남의 실행권 해제 불가, 응답 유실 → `unknown` + 재시도 없음 + 다음 실행 차단, 죽은 `in_progress` 차단, 평문 토큰이 D1·로그·감사 어디에도 없음, 시각 형식 한 가지 |
 | Phase 0 | 14개 항목 시작 상태, 통과에는 증적 필수, 증적에 주소·이메일·비밀값 거부, 변경+감사 한 batch, 같은 값 409, 비ADMIN 403 |
 | 그룹 동기화 | 1쪽·여러 쪽(`result_info` 있음/없음)·최대 쪽수, 허용 목록 밖 무시, 필수 그룹 누락·ADMIN 0명·알 수 없는 규칙·이메일 형식 → 실패하고 **사본 유지**, HTTP 401/403/429/500·시간 초과·네트워크·깨진 JSON·`success:false`, 대소문자·공백 정규화·중복 제거·exclude 적용, 빈 그룹·FINANCE 없음 = 정상, 같은 사유 연속 실패 = 감사 1건, 30분 초과 = `group_sync_stale` 1건, 설정 누락 시 외부 호출 0건, 변경 없으면 감사 0건, 자동 모드에서 수동 입력 409 |
 | 헤더 | 모든 응답 보안 헤더·no-store, `/api/health` = `{"ok":true}`, 500 응답에 내부 정보 없음, `_headers` 와 코드 값 일치, wrangler 자리표시자 |
@@ -217,12 +219,30 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 |---|---|---|
 | 적용됨 | `*/5 * * * *` | 앱 가용성 점검 (`uptime_state`) → 이어서 내부 KPI 갱신 (`kpi_cache`) |
 | 적용됨 | `*/15 * * * *` | Cloudflare API 로 Access 그룹 사본 자동 동기화 (`sync_state`·`group_sync_state` 갱신) |
-| 예정 | 필요 시 | 외부 토큰 갱신 (`tokens`·`token_lease`·`token_refresh_journal`, 응답 유실 = REFRESH_UNKNOWN) |
+| 적용됨(기본 꺼짐) | `0 * * * *` | 외부 토큰 갱신 (`tokens`·`token_lease`·`token_refresh_journal`, 응답 유실 = REFRESH_UNKNOWN) |
 | Phase 2 | KPI별 | `kpi_def` 기준 수집 → `kpi_cache` |
 | Phase 2 | 매일 | 감사 체인 머리 해시를 외부(별도 저장소)에 고정 기록 |
 | Phase 3 | KST 08:30 / UZT 09:00 | P2 요약 알림 (`notify_dedup`), 가용성 DOWN 즉시 알림 |
 
-**계정 Cron 합계** — Workers Free 한도는 계정당 5개다(R1 §5 기준). 현재 사용: 허브 2개(`*/5`, `*/15`) + 기존 BAND→Slack 브리지 1개 = **3개**. 남은 여유 2개. Cron 을 늘릴 때 이 표를 함께 갱신한다.
+**계정 Cron 합계** — Workers Free 한도는 계정당 5개다(R1 §5 기준). 현재 사용: 허브 3개(`*/5`, `*/15`, `0 * * * *`) + 기존 BAND→Slack 브리지 1개 = **4개**. 남은 여유 1개. R1 계획의 `25 23 * * *`(T-DAY)는 아직 넣지 않았다. Cron 을 늘릴 때 이 표를 함께 갱신한다.
+
+---
+
+### 4.2 외부 토큰 갱신을 켜기 전 조건 (WP3)
+
+`TOKEN_REFRESH_ENABLED` 기본값은 `"false"` 다. **아래가 모두 끝나기 전에는 켜지 않는다.**
+
+1. cafe24 개발자센터 **앱 등록**과 몰 ID 확인 (지금은 `<MALL_ID>` 자리표시자)
+2. 쇼핑몰 관리자 브라우저로 **최초 인증(동의)** — 로그인 없이 코드를 받을 방법은 없다(R2 §1.1)
+3. `src/tokens/providers.ts` 의 cafe24 어댑터에 실제 주소를 넣는다 (지금은 호출하면 `provider_not_configured` 로 끝난다)
+4. 암호화 키: `openssl rand -base64 32` → `npx wrangler secret put TOKEN_KEY_V1 --env=""` (설정 파일에 넣지 않는다). 키 값은 별첨 S 에 보관
+5. 토큰 첫 행을 넣을 때 **`tokens` 와 `token_lease` 를 같은 batch 로** 만든다(`createTokenStmts`). 실행권 행이 없으면 갱신이 영원히 돌지 않는다
+6. **G02**(원격 D1 의 batch·조건부 UPDATE 동작)와 **박선기 대표 승인**
+7. `wrangler.jsonc` 의 `TOKEN_REFRESH_ENABLED` 를 `"true"` 로 바꾸고 배포 → 관리 화면 *연동 토큰* 에서 상태 확인
+
+**충돌·확인 불가 상태는 자동으로 풀리지 않는다.** 마지막 선기록이 `conflict`·`unknown` 이거나 실행권이 끝난 `in_progress` 면
+다음 실행이 아예 시작하지 않는다(새 토큰을 덮어쓰지 않기 위해서다). 해제는 **관리자 재인증**(최초 인증과 같은 동의 절차) 뒤에만 가능하며,
+**재인증 기능은 이번 범위 밖**이다 — 그 상태가 되면 선기록의 암호문을 근거로 사람이 복구 절차를 밟는다.
 
 ---
 
@@ -233,6 +253,9 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 - **`SYS.P1_UNACKED` · `SYS.TOKEN_EXPIRY` · `SYS.TLS_EXPIRY`는 "준비 중"** 카드다(값 null + `NOT_IMPLEMENTED`). `SYS.TOKEN_EXPIRY`는 WP3에서 값과 연결된다.
 - **KPI 조회는 감사 체인에 남기지 않는다**: 조회마다 해시 체인에 쓰면 경합·용량이 커지고 감사 보존 기간이 아직 결정되지 않았다. 대신 `kpi_read` 구조화 로그(`actor_email`·`request_id`·KPI ID)만 남긴다 — R4 §2.1 ⑥과 다른 점이며 **보류** 항목이다.
 - **영업일 달력 없음**: `T-OPS`·`T-DAY`·`T-BANK` 등급은 R4에서 영업일 달력을 함께 보지만 지금은 경과 시간만 본다. 이번에 쓰는 KPI는 전부 `T-SYS`라 영향이 없다.
+- **토큰 갱신은 가짜 서버로만 시험했다**: 실제 cafe24 호출은 하지 않는다(몰 ID 미확인·앱 등록 전). 어댑터의 `call()` 은 지금 `provider_not_configured` 로 끝난다.
+- **④ 저장과 journal `applied` 를 한 batch 로 묶는 조건부 SQL** 은 로컬 `node:sqlite` 에서만 확인했다. 원격 D1 batch 에서 앞 문장의 결과를 뒤 문장이 보는지는 **G02 운영 검증 대기**다.
+- **토큰 등록 API 는 만들지 않았다**: 평문 토큰을 HTTP 로 받는 경로를 열지 않기 위해서다. 첫 행은 배포 담당자가 SQL·스크립트로 넣는다.
 - **번들 크기**: 사전 컴파일 검사기(약 259 KiB) 때문에 137 KiB → 590 KiB(gzip 90 KiB)로 늘었다. Workers 한도는 비압축 64 MiB(양 플랜 동일, 공식 문서 2026-09-17 확인)라 여유가 크다. Free 플랜 CPU 10 ms/요청은 조회 경로(캐시 읽기)만 타므로 문제되지 않으나, Cron의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 대기**다.
 - **알림 OFF**: 가용성 변화는 감사기록에만 남고 발송 코드는 없다(Phase 3).
 - **그룹 자동 동기화는 로컬 시험까지만 확인**: 실제 Cloudflare Access API 응답 모양(특히 `result_info` 유무, `require` 규칙의 실제 형태)은 **운영 검증 대기(G01)**. 공식 문서(2026-09-17 확인)에 맞춘 가짜 서버로만 왕복 시험했다. `email_list` 규칙은 목록 조회 API 를 확인하지 않아 **지원하지 않고 실패 처리**한다 `[재확인 필요]`.

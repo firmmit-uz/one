@@ -90,13 +90,16 @@ describe('보안 헤더·캐시', () => {
       ACCESS_AUD: '<AUD>',
       ALLOWED_ORIGIN: 'https://<허브 주소>',
       CF_ACCOUNT_ID: '<CF_ACCOUNT_ID>',
+      TOKEN_REFRESH_ENABLED: 'false',
     });
     expect(cfg.vars.DEV_FAKE_IDENTITY).toBeUndefined();
     // 비밀값(API 토큰)은 설정에 없어야 한다 — Worker Secret 으로만 넣는다
     // (주석에서 이름을 안내하는 것은 허용, 설정 값으로 들어가는 것은 금지)
     expect(cfg.vars.CF_API_TOKEN).toBeUndefined();
     expect(JSON.stringify(cfg)).not.toMatch(/CF_API_TOKEN/);
-    expect(cfg.triggers.crons).toEqual(['*/5 * * * *', '*/15 * * * *']);
+    expect(cfg.triggers.crons).toEqual(['*/5 * * * *', '*/15 * * * *', '0 * * * *']);
+    // 암호화 키는 설정에 없어야 한다 (Worker Secret 으로만)
+    expect(JSON.stringify(cfg)).not.toMatch(/TOKEN_KEY/);
     expect(cfg.observability.enabled).toBe(true);
     expect(cfg.env.development.vars.ENVIRONMENT).toBe('development');
     expect(cfg.env.development.vars.DEV_FAKE_IDENTITY).toMatch(/@example\.invalid$/);

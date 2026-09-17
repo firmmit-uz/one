@@ -44,6 +44,27 @@ const MUTANTS = [
   ],
   ['kpi: 증적 형식 검사 끔', 'src/kpi/phase0.ts', 'for (const b of EVIDENCE_BANNED) if (b.re.test(value)) return { ok: false, reason: b.reason };', ''],
   ['kpi: 깨진 캐시도 내보냄', 'src/kpi/gateway.ts', "if (typeof kpi.measure !== 'object' || kpi.measure === null) return null;", ''],
+  // WP3
+  [
+    'tokens: 버전 조건 제거 (④)',
+    'src/tokens/refresh.ts',
+    "'UPDATE tokens SET ciphertext = ?, iv = ?, key_version = ?, version = version + 1, expires_at = ?, updated_at = ?, last_refresh_journal_id = ? WHERE token_id = ? AND version = ?',",
+    "'UPDATE tokens SET ciphertext = ?, iv = ?, key_version = ?, version = version + 1, expires_at = ?, updated_at = ?, last_refresh_journal_id = ? WHERE token_id = ? AND ? IS NOT NULL',",
+  ],
+  [
+    'tokens: 실행권 해제에서 holder 조건 제거 (⑥)',
+    'src/tokens/refresh.ts',
+    "'UPDATE token_lease SET lease_until = ?1 WHERE token_id = ?2 AND holder = ?3'",
+    "'UPDATE token_lease SET lease_until = ?1 WHERE token_id = ?2 AND ?3 IS NOT NULL'",
+  ],
+  [
+    'tokens: 남은 시간 검사 제거 (②)',
+    'src/tokens/refresh.ts',
+    'if (Date.parse(leaseUntil) - now.getTime() < timeoutMs + marginMs) {',
+    'if (false) {',
+  ],
+  ['tokens: 차단 규칙 제거', 'src/tokens/refresh.ts', '  if (block !== null) {', '  if (false && block !== null) {'],
+  ['tokens: 기본 꺼짐 무시', 'src/tokens/refresh.ts', "return env.TOKEN_REFRESH_ENABLED === 'true';", "return env.TOKEN_REFRESH_ENABLED !== 'true';"],
 ];
 
 function prepare(name, mutate) {
