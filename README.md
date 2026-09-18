@@ -25,6 +25,14 @@ npm test -w apps/showroom           # 콘텐츠 검사 + 규칙 시험
 npm run test:ui -w apps/showroom    # 화면·조작·오프라인·QR (Playwright + opencv-python-headless)
 ```
 
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| `docs/FIRMMIT_ONE_인수인계_클로드코드_2026-09-18.md` | **작업을 이어받는 사람이 먼저 읽는다** — 첫 30분·금지 사항·기준 시험 숫자·함정 모음 |
+| `docs/FIRMMIT_ONE_변경표_v2.3_2026-09-17.md` | Z01–Z36 변경 내역 · 시험 결과 · 해시 · 남은 운영 검증 · FIRMMIT 에 물을 것 |
+| `docs/FIRMMIT_ONE_GPT리뷰_핸드오프_2026-09-17.md` | 외부 코드 리뷰 요청서 — 의심 지점 8건 · 제출 형식 |
+
 ## 배포
 
 **런북 v2.2의 게이트 G1(V0–V13) 전부 통과 + 박선기 대표 승인 후에만** 진행합니다.
