@@ -5,7 +5,7 @@
 | 항목 | 값 |
 |---|---|
 | 작성 | 2026-09-18 |
-| 인계 시점 커밋 | `4ab8f1a` (브랜치 `firmmit/brave-bardeen-0nolbj` = 저장소 기본 브랜치). **코드의 마지막 변경은 `362e3da`** — 그 뒤는 문서만 |
+| 인계 시점 | 브랜치 `firmmit/brave-bardeen-0nolbj` 의 **최신 커밋** (= 저장소 기본 브랜치). **코드의 마지막 변경은 `362e3da`** — 그 뒤 커밋은 문서뿐이다 |
 | 저장소 | <https://github.com/firmmit-uz/one> — **공개(public)** |
 | 이번까지 끝난 것 | Phase 1.5 **WP1–WP4** 제작 + 자체 점검 수정 2건(Z35·Z36) |
 | 다음 사람이 할 것 | **§8** — GPT 리뷰 결과 반영 · 보류 3건 해제 · 배포 지원 |
@@ -22,7 +22,7 @@
 # 1) 받기
 git clone https://github.com/firmmit-uz/one
 cd one
-git log --oneline -1          # 4ab8f1a 이상이어야 한다
+git log --oneline -1          # 코드 기준선은 362e3da. 그 위 커밋은 문서 갱신뿐이다
 git status                    # 깨끗해야 한다
 
 # 2) 환경 (Node 22.13 이상. 확인 시점 v22.22.2)
@@ -363,10 +363,12 @@ CCTV(R3) · DNS 이전 · 대시보드 확장 · 기존 앱(농자재·견적·�
 ## 12. 인계 시점 체크섬
 
 ```
-커밋      4ab8f1a  (코드는 362e3da 가 마지막. 그 뒤는 문서만)
-브랜치    firmmit/brave-bardeen-0nolbj  (= 저장소 기본 브랜치, PR 대상 없음)
-추적 파일  150개
+코드 기준선  362e3da   (그 뒤 커밋은 문서 갱신뿐)
+브랜치      firmmit/brave-bardeen-0nolbj  (= 저장소 기본 브랜치, PR 대상 없음)
+추적 파일    149개  (git ls-files | wc -l)
 ```
+
+아래 해시는 `362e3da` 이후 바뀌지 않았다. 하나라도 다르면 누군가 코드를 고친 것이다.
 
 | 파일 | SHA-256 앞 12자리 |
 |---|---|
@@ -398,7 +400,7 @@ sha256sum packages/contracts/src/generated/schema-validator.mjs | cut -c1-12
 
 ```text
 FIRMMIT ONE 저장소를 이어받는다.
-저장소 https://github.com/firmmit-uz/one · 브랜치 firmmit/brave-bardeen-0nolbj · 커밋 4ab8f1a.
+저장소 https://github.com/firmmit-uz/one · 브랜치 firmmit/brave-bardeen-0nolbj (코드 기준선 362e3da).
 
 1. docs/FIRMMIT_ONE_인수인계_클로드코드_2026-09-18.md 를 끝까지 읽는다.
 2. CLAUDE.md 의 금지 사항을 그대로 지킨다. 특히:
