@@ -108,6 +108,7 @@ describe('보안 헤더·캐시', () => {
       TOKEN_REFRESH_ENABLED: 'false',
       CCTV_ENABLED: 'false',
       CCTV_RELAY_ORIGIN: '<CCTV_RELAY_ORIGIN>',
+      CCTV_RELAY_AUTH: 'none',
     });
     expect(cfg.vars.DEV_FAKE_IDENTITY).toBeUndefined();
     // 비밀값(API 토큰)은 설정에 없어야 한다 — Worker Secret 으로만 넣는다
@@ -118,8 +119,10 @@ describe('보안 헤더·캐시', () => {
     // 암호화 키는 설정에 없어야 한다 (Worker Secret 으로만)
     expect(JSON.stringify(cfg)).not.toMatch(/TOKEN_KEY/);
     // CCTV 접속표도 설정 값으로 들어가면 안 된다 (Worker Secret 으로만)
-    expect(cfg.vars.CCTV_RELAY_TOKEN).toBeUndefined();
-    expect(JSON.stringify(cfg)).not.toMatch(/CCTV_RELAY_TOKEN/);
+    for (const k of ['CCTV_RELAY_USER', 'CCTV_RELAY_PASS', 'CCTV_RELAY_CF_ID', 'CCTV_RELAY_CF_SECRET']) {
+      expect(cfg.vars[k]).toBeUndefined();
+      expect(JSON.stringify(cfg)).not.toMatch(new RegExp(k));
+    }
     expect(cfg.observability.enabled).toBe(true);
     expect(cfg.env.development.vars.ENVIRONMENT).toBe('development');
     expect(cfg.env.development.vars.DEV_FAKE_IDENTITY).toMatch(/@example\.invalid$/);

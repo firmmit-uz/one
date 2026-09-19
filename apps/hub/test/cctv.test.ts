@@ -7,8 +7,8 @@ import {
   isSafeStreamPath,
   isEnabled,
   playTarget,
+  relayAuth,
   relayOrigin,
-  relayToken,
   toView,
   type CameraRow,
 } from '../src/cctv';
@@ -122,10 +122,47 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
     }
   });
 
-  it('접속표: 형식이 어긋나거나 자리표시자면 없는 것으로 본다', () => {
-    expect(relayToken(envOf({ CCTV_RELAY_TOKEN: 'abcd1234_TOKEN-value' }))).toBe('abcd1234_TOKEN-value');
-    for (const bad of [undefined, '', 'short', '<CCTV_RELAY_TOKEN>', 'has space here', 'a'.repeat(257)]) {
-      expect(relayToken(envOf({ CCTV_RELAY_TOKEN: bad }))).toBeNull();
+  it('중계 서버에 밝히는 방법: 기본은 none, 모르는 값은 실패', () => {
+    expect(relayAuth(envOf({}))).toEqual({ ok: true, headers: [] });
+    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: 'none' }))).toEqual({ ok: true, headers: [] });
+    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: '  ' }))).toEqual({ ok: true, headers: [] });
+    for (const bad of ['bearer', 'BASIC', 'digest', 'cf_access', 'x']) {
+      expect(relayAuth(envOf({ CCTV_RELAY_AUTH: bad })).ok).toBe(false);
+    }
+  });
+
+  it('basic: 아이디·비밀번호가 있어야 하고, 없으면 실패(그냥 부르지 않는다)', () => {
+    const ok = relayAuth(envOf({ CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit', CCTV_RELAY_PASS: 'pw-123' }));
+    expect(ok).toEqual({ ok: true, headers: [['Authorization', `Basic ${btoa('firmmit:pw-123')}`]] });
+    const bad: Partial<Env>[] = [
+      { CCTV_RELAY_AUTH: 'basic' },
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit' },
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_PASS: 'pw-123' },
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'a:b', CCTV_RELAY_PASS: 'pw' }, // ':' 는 구분이 안 된다
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit', CCTV_RELAY_PASS: '' },
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: '한글', CCTV_RELAY_PASS: 'pw' }, // ASCII 만
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'a b', CCTV_RELAY_PASS: 'pw' },
+      { CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit', CCTV_RELAY_PASS: 'a'.repeat(257) },
+    ];
+    for (const e of bad) expect(relayAuth(envOf(e)).ok).toBe(false);
+  });
+
+  it('cf-access: Cloudflare 서비스 토큰 머리말 2개', () => {
+    const ok = relayAuth(envOf({ CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_ID: 'abc.access', CCTV_RELAY_CF_SECRET: 'cfast_secret1234' }));
+    expect(ok).toEqual({
+      ok: true,
+      headers: [
+        ['CF-Access-Client-Id', 'abc.access'],
+        ['CF-Access-Client-Secret', 'cfast_secret1234'],
+      ],
+    });
+    for (const e of [
+      { CCTV_RELAY_AUTH: 'cf-access' },
+      { CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_ID: 'abc.access' },
+      { CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_SECRET: 'cfast_x' },
+      { CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_ID: 'abc.access', CCTV_RELAY_CF_SECRET: '' },
+    ] as Partial<Env>[]) {
+      expect(relayAuth(envOf(e)).ok).toBe(false);
     }
   });
 
@@ -172,7 +209,7 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
   const env = envOf({ CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: RELAY });
 
   it('정상이면 중계 서버 주소 + 경로를 합쳐 준다', () => {
-    expect(playTarget(env, row())).toEqual({ ok: true, url: `${RELAY}/live/cam1.mp4`, kind: 'mp4' });
+    expect(playTarget(env, row())).toEqual({ ok: true, url: `${RELAY}/live/cam1.mp4`, kind: 'mp4', authHeaders: [] });
   });
 
   it('꺼짐·주소 없음·미연결·알 수 없는 방식은 모두 거부', () => {
@@ -182,6 +219,9 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
     expect(playTarget(env, row({ stream_kind: 'hls' }))).toEqual({ ok: false, code: 'unsupported_stream' });
     expect(playTarget(env, row({ stream_kind: 'rtsp' }))).toEqual({ ok: false, code: 'unsupported_stream' });
     expect(playTarget(env, row({ stream_path: '//evil.example/x.mp4' }))).toEqual({ ok: false, code: 'unsupported_stream' });
+    // 밝히는 방법을 정해 놓고 값이 없으면 **부르지 않는다** (조용히 익명으로 부르지 않는다)
+    expect(playTarget(envOf({ ...env, CCTV_RELAY_AUTH: 'basic' }), row())).toEqual({ ok: false, code: 'relay_auth_misconfigured' });
+    expect(playTarget(envOf({ ...env, CCTV_RELAY_AUTH: 'bearer' }), row())).toEqual({ ok: false, code: 'relay_auth_misconfigured' });
   });
 
   it('화면용 값에는 경로·중계 서버 주소가 들어가지 않는다', () => {
@@ -246,7 +286,7 @@ describe('CCTV 목록', () => {
   });
 
   it('정상 설정이면 볼 수 있음 + 응답에 경로·주소·접속표가 없다', async () => {
-    const h = await cctvHarness({ CCTV_RELAY_TOKEN: 'secret-token-value-123' });
+    const h = await cctvHarness({ CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit', CCTV_RELAY_PASS: 'secret-token-value-123' });
     addCamera(h.sqlite, { camera_id: 'cam-1', sort: 2 });
     addCamera(h.sqlite, { camera_id: 'cam-2', sort: 1, stream_kind: 'snapshot', stream_path: '/snap.jpg' });
     const res = await h.call('/api/cctv', { token: await h.token(ADMIN) });
@@ -366,13 +406,28 @@ describe('CCTV 영상 전달 (프록시)', () => {
     expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Range')).toBeNull();
   });
 
-  it('접속표가 있으면 중계 서버에만 보낸다 (응답에는 없다)', async () => {
-    const { h, res } = await play({ CCTV_RELAY_TOKEN: 'secret-token-value-123' });
+  it('basic 접속표는 중계 서버에만 보낸다 (응답에는 없다)', async () => {
+    const { h, res } = await play({ CCTV_RELAY_AUTH: 'basic', CCTV_RELAY_USER: 'firmmit', CCTV_RELAY_PASS: 'pw-secret-123' });
     const sent = new Headers(h.calls[0]!.init?.headers as HeadersInit);
-    expect(sent.get('Authorization')).toBe('Bearer secret-token-value-123');
+    expect(sent.get('Authorization')).toBe(`Basic ${btoa('firmmit:pw-secret-123')}`);
     let dump = '';
     res.headers.forEach((v, k) => (dump += `${k}:${v};`));
-    expect(dump).not.toContain('secret-token-value-123');
+    expect(dump).not.toContain('pw-secret-123');
+    expect(dump).not.toContain(btoa('firmmit:pw-secret-123'));
+  });
+
+  it('cf-access 접속표는 머리말 2개로 보낸다', async () => {
+    const { h } = await play({ CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_ID: 'abc.access', CCTV_RELAY_CF_SECRET: 'cfast_secret1234' });
+    const sent = new Headers(h.calls[0]!.init?.headers as HeadersInit);
+    expect(sent.get('CF-Access-Client-Id')).toBe('abc.access');
+    expect(sent.get('CF-Access-Client-Secret')).toBe('cfast_secret1234');
+  });
+
+  it('밝히는 방법이 잘못 설정되면 중계 서버를 부르지 않는다', async () => {
+    const { h, res } = await play({ CCTV_RELAY_AUTH: 'basic' }); // 아이디·비밀번호 없음
+    expect(res.status).toBe(409);
+    expect((await json(res)).error.code).toBe('relay_auth_misconfigured');
+    expect(h.calls.length).toBe(0);
   });
 
   it('형식이 다르면 거부한다 (허브 출처로 HTML·JS 가 들어오지 못하게)', async () => {

@@ -256,27 +256,105 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 허브는 카메라에 직접 붙지 않는다. 구조는 이렇다:
 
 ```
-[Tapo 카메라] --RTSP(사내망)--> [중계 서버] --HTTPS--> [허브 Worker] --같은 출처--> [브라우저]
+[카메라] --RTSP(같은 사내망)--> [중계 PC] --Cloudflare Tunnel--> [허브 Worker] --같은 출처--> [브라우저]
                                    └ 카메라 계정·비밀번호는 여기에만 있다
 ```
 
-1. **중계 서버 1대**를 사내에 두고, RTSP 를 **진행형 MP4(`video/mp4`) 또는 JPEG 사진(`image/jpeg`)** 으로 내보내게 한다.
-   - `mp4` 는 브라우저가 라이브러리 없이 바로 재생한다. **H.264 로 내보내야** 크롬·엣지·사파리에서 열린다.
-   - 대역폭이 좁거나 재생이 안 되면 `snapshot`(JPEG) 방식을 쓴다.
-2. Tapo 앱에서 **카메라 계정**을 따로 만든다(Tapo 로그인과 별개). RTSP 주소는 `rtsp://아이디:비밀번호@카메라IP:554/stream1`.
-   **이 주소와 계정은 중계 서버에만 넣는다. 허브·D1·저장소에 넣지 않는다.**
-3. 중계 서버를 **바깥에서 바로 열리지 않게** 한다(Cloudflare Tunnel 등). 접속표를 쓰면
-   `npx wrangler secret put CCTV_RELAY_TOKEN --env=""` 로 넣는다 (설정 파일에 넣지 않는다).
-4. `wrangler.jsonc` 의 `CCTV_RELAY_ORIGIN` 을 중계 서버 주소(`https://...`)로 바꾼다.
+**중계 PC 는 카메라와 같은 사내망(같은 공유기) 안에 있어야 한다.** Tapo 의 RTSP 는 같은 망에서만 열린다.
+보는 사람은 어디에 있어도 된다 — 허브를 거치기 때문이다. 시설이 여러 곳이면 **시설마다 중계 PC 1대씩** 필요하다.
+
+#### 4.3.1 중계 PC 에 할 일 (카메라가 있는 시설에서)
+
+1. **Tapo 앱에서 카메라 계정 만들기**
+   Tapo 앱 → 카메라 → 설정 → 고급 설정 → 카메라 계정. **Tapo 로그인과 별개의 아이디·비밀번호**다.
+   만들고 나면 RTSP 주소는 `rtsp://아이디:비밀번호@카메라IP:554/stream1` (고화질) · `/stream2` (저화질).
+   카메라 IP 는 공유기 관리 화면이나 Tapo 앱에서 확인한다. **공유기에서 IP 를 고정**해 두는 것이 좋다(재부팅 때 바뀌면 끊긴다).
+
+2. **중계 프로그램 설치 — go2rtc** (무료·공개)
+   내려받기: <https://github.com/AlexxIT/go2rtc/releases> 의 `go2rtc_win64.zip` (Windows 10 이상 64비트).
+   압축을 풀고 같은 폴더에 `go2rtc.yaml` 을 만든다:
+
+   ```yaml
+   api:
+     listen: "127.0.0.1:1984"   # 바깥에 직접 열지 않는다. 터널만 통과시킨다.
+
+   streams:
+     cheonan-gate:  # 허브에 등록할 이름과 같게 맞추면 헷갈리지 않는다
+       - rtsp://<카메라아이디>:<카메라비밀번호>@192.168.0.101:554/stream1
+     icheon-vfarm:
+       - rtsp://<카메라아이디>:<카메라비밀번호>@192.168.0.102:554/stream2
+   ```
+
+   `go2rtc.exe` 를 실행하고 <http://127.0.0.1:1984/> 에서 영상이 보이는지 먼저 확인한다.
+   여기서 안 보이면 그 다음 단계는 의미가 없다 — 카메라 계정·IP·같은 망인지부터 다시 본다.
+
+   go2rtc 가 내보내는 주소가 곧 허브에 넣을 **경로**다:
+
+   | 재생 방식 | 경로 | 형식 |
+   |---|---|---|
+   | `mp4` (실시간 영상) | `/api/stream.mp4?src=cheonan-gate` | `video/mp4` |
+   | `snapshot` (사진) | `/api/frame.jpeg?src=cheonan-gate` | `image/jpeg` |
+
+   허브는 이 두 형식만 받는다. 다른 형식이 오면 502 로 막는다.
+
+3. **PC 가 꺼지지 않게 한다**
+   제어판 → 전원 옵션 → 절전 **안 함**, 하드디스크 끄기 **안 함**. 화면만 꺼지는 것은 괜찮다.
+   PC 를 끄면 경영진 화면도 같이 꺼진다.
+
+4. **Cloudflare Tunnel 로 내보내기**
+   `cloudflared` 를 설치하고(<https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/>)
+   Cloudflare Zero Trust 에서 터널을 만든 뒤, 공개 호스트 이름을 `http://127.0.0.1:1984` 로 연결한다.
+   **공유기 포트포워딩은 하지 않는다** — 터널은 밖에서 들어오는 문을 열지 않는다.
+
+5. **아무나 못 보게 잠그기** — 둘 중 하나를 고른다
+
+   | 방법 | 설정 | 허브 쪽 |
+   |---|---|---|
+   | **Cloudflare Access 서비스 토큰** (권장) | Zero Trust → Access → 그 호스트에 정책을 걸고 서비스 토큰 발급 | `CCTV_RELAY_AUTH="cf-access"` + Secret `CCTV_RELAY_CF_ID`·`CCTV_RELAY_CF_SECRET` |
+   | go2rtc 자체 인증 | `go2rtc.yaml` 의 `api:` 에 `username`·`password` 추가 | `CCTV_RELAY_AUTH="basic"` + Secret `CCTV_RELAY_USER`·`CCTV_RELAY_PASS` |
+
+   권장 쪽이 나은 이유: Cloudflare 가 **가장자리에서 먼저 막아** 중계 PC 까지 요청이 오지 않는다.
+
+   **`CCTV_RELAY_AUTH` 를 정해 놓고 짝이 되는 값이 없으면 허브는 재생을 거부한다** —
+   조용히 아무 것도 안 밝히고 부르면, 중계 서버가 열려 있을 때 그대로 통과해 버리기 때문이다.
+
+#### 4.3.2 허브 쪽에 할 일
+
+1. Secret 등록 (설정 파일에 넣지 않는다):
+   ```bash
+   npx wrangler secret put CCTV_RELAY_CF_ID --env=""
+   npx wrangler secret put CCTV_RELAY_CF_SECRET --env=""
+   ```
+2. `wrangler.jsonc` 에서
+   - `CCTV_RELAY_ORIGIN` → 4.3.1-4 에서 만든 **터널 호스트 주소**(`https://...`)
+   - `CCTV_RELAY_AUTH` → `"cf-access"` 또는 `"basic"`
    **자리표시자 `<CCTV_RELAY_ORIGIN>` 그대로면 꺼진 것과 같게 동작한다.**
-5. 관리 화면(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다** — 서버 주소는 설정값에서 온다.
-6. **노무·법무 검토**: 직원이 찍히는 화면을 상시 열람하는 형태가 되면 근로자 감시 문제가 생길 수 있다.
-   기술적으로는 열람 기록(`cctv_view_open` 감사기록)과 ADMIN 제한이 들어가 있으나, 적용 법령 판단은 이 문서 범위 밖이다. `[재확인 필요]`
-7. **G11**(실제 중계 서버·카메라 연결, 영상 재생, 대역폭·CPU)과 **박선기 대표 승인**
-8. `CCTV_ENABLED` 를 `"true"` 로 바꾸고 배포 → *CCTV* 화면에서 확인
+3. 배포 후 관리 화면(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다**:
+   ```json
+   { "camera_id": "tashkent-akis-1", "name_ko": "타슈켄트 AKIS 1번", "site": "타슈켄트",
+     "stream_kind": "mp4", "stream_path": "/api/stream.mp4?src=tashkent-akis-1" }
+   ```
+4. `CCTV_ENABLED` 를 `"true"` 로 바꾸고 배포 → *CCTV* 화면에서 확인
+
+#### 4.3.3 해외 구간(우즈베키스탄↔한국)에서 주의할 것
+
+| 항목 | 내용 |
+|---|---|
+| **업로드 속도** | 영상은 현지 회선의 **업로드**로 나간다. 1080p 실시간은 카메라 1대당 대략 2~4 Mbps 가 필요하다. 회선이 좁으면 `stream2`(저화질) 를 쓰거나 `snapshot` 방식으로 바꾼다 `[재확인 필요]` |
+| **동시 시청** | 허브가 사람마다 따로 중계 서버에 요청한다. 여러 명이 동시에 보면 업로드도 그만큼 늘어난다 |
+| **지연** | 진행형 MP4 는 보통 수 초 지연된다. 실시간 관제용이 아니라 **상황 확인용**으로 보아야 한다 `[재확인 필요]` |
+| **정전·회선 단절** | 중계 PC 나 현지 회선이 끊기면 화면은 `502` 로 뜬다. 허브가 끊긴 것을 "정상" 으로 표시하지는 않는다 |
+
+#### 4.3.4 그 밖에 남은 것
+
+- **노무·법무 검토**: 직원이 찍히는 화면을 상시 열람하는 형태가 되면 근로자 감시 문제가 생길 수 있다.
+  기술적으로는 열람 기록(`cctv_view_open` 감사기록)과 ADMIN 제한이 들어가 있으나, 한국·우즈베키스탄 법령 판단은 이 문서 범위 밖이다. `[재확인 필요]`
+- **G11**(실제 중계 서버·카메라 연결, 영상 재생, 대역폭·CPU)과 **박선기 대표 승인**
 
 **안 켜면 아무 일도 없다.** 꺼져 있거나 주소가 자리표시자면 카메라는 전부 "볼 수 없음" 으로 표시되고,
-영상 요청은 `409 cctv_disabled` / `409 relay_not_configured` 로 끝난다(중계 서버를 부르지도 않는다).
+영상 요청은 `409` 로 끝난다(중계 서버를 부르지도 않는다).
+
+> 위 프로그램 이름·주소는 2026-09-19 웹 검색으로 확인했다. **내려받기 전에 공식 저장소 주소가 맞는지 다시 확인한다.** `[재확인 필요]`
 
 ---
 

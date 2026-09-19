@@ -35,15 +35,52 @@ const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 
-/** 중계 서버 접속표(Worker Secret). 형식이 어긋나면 없는 것으로 본다.
- *  자리표시자 `<CCTV_RELAY_TOKEN>` 은 '<' 때문에 이 형식에서 걸러진다 —
- *  따로 자리표시자 검사를 두지 않는다(겹치는 검사는 꺼져도 티가 나지 않는다). */
-const RELAY_TOKEN_RE = /^[A-Za-z0-9._~+/=-]{8,256}$/;
+/**
+ * 중계 서버에 자신을 밝히는 방법.
+ *   none      : 밝히지 않는다 (중계 서버가 사내망에서만 열릴 때)
+ *   basic     : 아이디·비밀번호 (go2rtc 등 중계 프로그램 자체의 인증)
+ *   cf-access : Cloudflare Access 서비스 토큰 (Cloudflare 가 가장자리에서 먼저 막는다)
+ * 목록 밖 값은 **설정 잘못**으로 보고 재생을 막는다.
+ */
+export const RELAY_AUTH_SCHEMES = ['none', 'basic', 'cf-access'] as const;
+export type RelayAuthScheme = (typeof RELAY_AUTH_SCHEMES)[number];
 
-export function relayToken(env: Env): string | null {
-  const v = env.CCTV_RELAY_TOKEN;
-  if (typeof v !== 'string') return null;
-  return RELAY_TOKEN_RE.test(v) ? v : null;
+// 아이디·비밀번호·토큰에 쓸 수 있는 글자 (btoa 가 처리할 수 있는 ASCII 만)
+const CRED_RE = /^[\x21-\x7e]{1,256}$/;
+
+export type RelayAuthResult =
+  | { ok: true; headers: [string, string][] }
+  | { ok: false };
+
+/**
+ * 밝히는 방법을 정한다.
+ * **방법을 정해 놓고 값이 없거나 형식이 어긋나면 실패**로 본다 —
+ * 조용히 "안 밝히고" 부르면 중계 서버가 열려 있을 때 그대로 통과해 버린다.
+ */
+export function relayAuth(env: Env): RelayAuthResult {
+  const raw = env.CCTV_RELAY_AUTH;
+  const scheme = raw === undefined || raw.trim() === '' ? 'none' : raw.trim();
+  if (!(RELAY_AUTH_SCHEMES as readonly string[]).includes(scheme)) return { ok: false }; // MUTATION:CCTV-AUTH-UNKNOWN
+  if (scheme === 'none') return { ok: true, headers: [] };
+  if (scheme === 'basic') {
+    const user = env.CCTV_RELAY_USER;
+    const pass = env.CCTV_RELAY_PASS;
+    // 아이디에 ':' 가 있으면 비밀번호와 구분되지 않는다 (RFC 7617)
+    if (typeof user !== 'string' || !CRED_RE.test(user) || user.includes(':')) return { ok: false };
+    if (typeof pass !== 'string' || !CRED_RE.test(pass)) return { ok: false };
+    return { ok: true, headers: [['Authorization', `Basic ${btoa(`${user}:${pass}`)}`]] };
+  }
+  const id = env.CCTV_RELAY_CF_ID;
+  const secret = env.CCTV_RELAY_CF_SECRET;
+  if (typeof id !== 'string' || !CRED_RE.test(id)) return { ok: false };
+  if (typeof secret !== 'string' || !CRED_RE.test(secret)) return { ok: false };
+  return {
+    ok: true,
+    headers: [
+      ['CF-Access-Client-Id', id],
+      ['CF-Access-Client-Secret', secret],
+    ],
+  };
 }
 
 export interface CameraRow {
@@ -162,8 +199,8 @@ export function toView(row: CameraRow, relayReady: boolean): CameraView {
 }
 
 export type PlayCheck =
-  | { ok: true; url: string; kind: StreamKind }
-  | { ok: false; code: 'cctv_disabled' | 'relay_not_configured' | 'not_connected' | 'unsupported_stream' };
+  | { ok: true; url: string; kind: StreamKind; authHeaders: [string, string][] }
+  | { ok: false; code: 'cctv_disabled' | 'relay_not_configured' | 'relay_auth_misconfigured' | 'not_connected' | 'unsupported_stream' };
 
 /** 재생 전 확인 한 군데. 화면·프록시 모두 이 결과만 믿는다. */
 export function playTarget(env: Env, row: CameraRow): PlayCheck {
@@ -173,12 +210,15 @@ export function playTarget(env: Env, row: CameraRow): PlayCheck {
   if (row.status !== 'active') return { ok: false, code: 'not_connected' };
   if (!isStreamKind(row.stream_kind)) return { ok: false, code: 'unsupported_stream' };
   if (!isSafeStreamPath(row.stream_path)) return { ok: false, code: 'unsupported_stream' };
-  return { ok: true, url: `${origin}${row.stream_path}`, kind: row.stream_kind };
+  const auth = relayAuth(env);
+  if (!auth.ok) return { ok: false, code: 'relay_auth_misconfigured' };
+  return { ok: true, url: `${origin}${row.stream_path}`, kind: row.stream_kind, authHeaders: auth.headers };
 }
 
 const FAIL_STATUS: Record<Exclude<PlayCheck, { ok: true }>['code'], 409 | 404> = {
   cctv_disabled: 409,
   relay_not_configured: 409,
+  relay_auth_misconfigured: 409,
   not_connected: 409,
   unsupported_stream: 409,
 };
@@ -186,6 +226,7 @@ const FAIL_STATUS: Record<Exclude<PlayCheck, { ok: true }>['code'], 409 | 404> =
 const FAIL_MESSAGE: Record<Exclude<PlayCheck, { ok: true }>['code'], string> = {
   cctv_disabled: 'CCTV viewing is disabled',
   relay_not_configured: 'CCTV relay is not configured',
+  relay_auth_misconfigured: 'CCTV relay credentials are not configured correctly',
   not_connected: 'Camera is not connected',
   unsupported_stream: 'Camera stream is not usable',
 };
@@ -196,15 +237,14 @@ const FAIL_MESSAGE: Record<Exclude<PlayCheck, { ok: true }>['code'], string> = {
  * - 돌려줄 때도 정해진 머리말만 넘기고, 형식이 다르면 거부한다.
  */
 export async function proxyStream(
-  target: { url: string; kind: StreamKind },
+  target: { url: string; kind: StreamKind; authHeaders?: [string, string][] },
   range: string | null,
   deps: CctvDeps,
-  token: string | null = null,
 ): Promise<Response> {
   const headers = new Headers();
   if (range !== null && RANGE_RE.test(range)) headers.set('Range', range);
   // 접속표는 중계 서버로만 간다. 브라우저·로그·감사기록에는 나오지 않는다.
-  if (token !== null) headers.set('Authorization', `Bearer ${token}`);
+  for (const [k, v] of target.authHeaders ?? []) headers.set(k, v);
 
   let upstream: Response;
   const ctl = new AbortController();
@@ -296,7 +336,7 @@ export function cctvRoutes(deps: CctvDeps) {
         stream_kind: target.kind,
       }),
     );
-    return proxyStream(target, c.req.header('Range') ?? null, deps, relayToken(c.env));
+    return proxyStream(target, c.req.header('Range') ?? null, deps);
   });
 
   return r;
