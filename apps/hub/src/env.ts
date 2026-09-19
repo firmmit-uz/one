@@ -12,6 +12,11 @@ export interface Env {
   // WP3 토큰 갱신: 기본 꺼짐("true" 외의 값은 모두 꺼짐). 암호화 키는 Worker Secret.
   TOKEN_REFRESH_ENABLED?: string;
   TOKEN_KEY_V1?: string;
+  // R3 CCTV: 기본 꺼짐("true" 외의 값은 모두 꺼짐).
+  // 중계 서버 주소는 vars(자리표시자), 접속표는 Worker Secret. 카메라 계정은 허브에 두지 않는다.
+  CCTV_ENABLED?: string;
+  CCTV_RELAY_ORIGIN?: string;
+  CCTV_RELAY_TOKEN?: string;
 }
 
 export const ROLES = ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN'] as const;

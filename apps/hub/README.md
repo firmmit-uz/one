@@ -60,6 +60,11 @@ apps/hub/
 | `GET /api/admin/tokens` | Access | 허브 ADMIN | 연동 토큰 **상태만**(값·암호문 미포함) + 자동 갱신 켜짐 여부 |
 | `GET /api/admin/phase0` | Access | 허브 ADMIN | 게이트 G1 체크리스트 14개 + 통과 수 |
 | `POST /api/admin/phase0/:item_id` | Access | 허브 ADMIN | `{state: pending\|passed\|failed\|na, evidence_ref?, reason?}`. `passed`는 증적 참조 필수, 증적에 주소·이메일·비밀값 형태 금지 |
+| `GET /api/cctv` | Access | 허브 ADMIN | 카메라 목록. **중계 서버 주소·경로는 응답에 없음** |
+| `POST /api/cctv/:camera_id/open` | Access | 허브 ADMIN | 열람 시작 `{reason?}` → 감사기록 1건 + `play_path` |
+| `GET /api/cctv/:camera_id/play` | Access | 허브 ADMIN | 영상을 **같은 출처로 전달**. 형식이 `video/mp4`·`image/jpeg` 가 아니면 502 |
+| `GET /api/admin/cctv` | Access | 허브 ADMIN | 카메라 목록(관리용, 정렬·갱신 시각 포함) |
+| `POST /api/admin/cctv` | Access | 허브 ADMIN | 카메라 등록·수정 `{camera_id, name_ko, site, stream_kind, stream_path\|null, sort?, reason?}` |
 | `GET /api/admin/audit?limit=&before=` | Access | 허브 ADMIN | 감사기록 (최대 500) |
 | `GET /api/admin/audit/verify` | Access | 허브 ADMIN | 해시 체인 점검 `{ok, checked, broken_at_id?, reason?}` |
 
@@ -244,6 +249,35 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 다음 실행이 아예 시작하지 않는다(새 토큰을 덮어쓰지 않기 위해서다). 해제는 **관리자 재인증**(최초 인증과 같은 동의 절차) 뒤에만 가능하며,
 **재인증 기능은 이번 범위 밖**이다 — 그 상태가 되면 선기록의 암호문을 근거로 사람이 복구 절차를 밟는다.
 
+### 4.3 CCTV 보기를 켜기 전 조건 (R3 1단계)
+
+`CCTV_ENABLED` 기본값은 `"false"` 다. **아래가 모두 끝나기 전에는 켜지 않는다.**
+
+허브는 카메라에 직접 붙지 않는다. 구조는 이렇다:
+
+```
+[Tapo 카메라] --RTSP(사내망)--> [중계 서버] --HTTPS--> [허브 Worker] --같은 출처--> [브라우저]
+                                   └ 카메라 계정·비밀번호는 여기에만 있다
+```
+
+1. **중계 서버 1대**를 사내에 두고, RTSP 를 **진행형 MP4(`video/mp4`) 또는 JPEG 사진(`image/jpeg`)** 으로 내보내게 한다.
+   - `mp4` 는 브라우저가 라이브러리 없이 바로 재생한다. **H.264 로 내보내야** 크롬·엣지·사파리에서 열린다.
+   - 대역폭이 좁거나 재생이 안 되면 `snapshot`(JPEG) 방식을 쓴다.
+2. Tapo 앱에서 **카메라 계정**을 따로 만든다(Tapo 로그인과 별개). RTSP 주소는 `rtsp://아이디:비밀번호@카메라IP:554/stream1`.
+   **이 주소와 계정은 중계 서버에만 넣는다. 허브·D1·저장소에 넣지 않는다.**
+3. 중계 서버를 **바깥에서 바로 열리지 않게** 한다(Cloudflare Tunnel 등). 접속표를 쓰면
+   `npx wrangler secret put CCTV_RELAY_TOKEN --env=""` 로 넣는다 (설정 파일에 넣지 않는다).
+4. `wrangler.jsonc` 의 `CCTV_RELAY_ORIGIN` 을 중계 서버 주소(`https://...`)로 바꾼다.
+   **자리표시자 `<CCTV_RELAY_ORIGIN>` 그대로면 꺼진 것과 같게 동작한다.**
+5. 관리 화면(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다** — 서버 주소는 설정값에서 온다.
+6. **노무·법무 검토**: 직원이 찍히는 화면을 상시 열람하는 형태가 되면 근로자 감시 문제가 생길 수 있다.
+   기술적으로는 열람 기록(`cctv_view_open` 감사기록)과 ADMIN 제한이 들어가 있으나, 적용 법령 판단은 이 문서 범위 밖이다. `[재확인 필요]`
+7. **G11**(실제 중계 서버·카메라 연결, 영상 재생, 대역폭·CPU)과 **박선기 대표 승인**
+8. `CCTV_ENABLED` 를 `"true"` 로 바꾸고 배포 → *CCTV* 화면에서 확인
+
+**안 켜면 아무 일도 없다.** 꺼져 있거나 주소가 자리표시자면 카메라는 전부 "볼 수 없음" 으로 표시되고,
+영상 요청은 `409 cctv_disabled` / `409 relay_not_configured` 로 끝난다(중계 서버를 부르지도 않는다).
+
 ---
 
 ## 5. 알려진 한계
@@ -257,6 +291,10 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 - **④ 저장과 journal `applied` 를 한 batch 로 묶는 조건부 SQL** 은 로컬 `node:sqlite` 에서만 확인했다. 원격 D1 batch 에서 앞 문장의 결과를 뒤 문장이 보는지는 **G02 운영 검증 대기**다.
 - **토큰 등록 API 는 만들지 않았다**: 평문 토큰을 HTTP 로 받는 경로를 열지 않기 위해서다. 첫 행은 배포 담당자가 SQL·스크립트로 넣는다.
 - **번들 크기**: 사전 컴파일 검사기(약 259 KiB) 때문에 137 KiB → 590 KiB(gzip 90 KiB)로 늘었다. Workers 한도는 비압축 64 MiB(양 플랜 동일, 공식 문서 2026-09-17 확인)라 여유가 크다. Free 플랜 CPU 10 ms/요청은 조회 경로(캐시 읽기)만 타므로 문제되지 않으나, Cron의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 대기**다.
+- **CCTV 는 중계 서버가 있어야 동작한다**: 허브는 RTSP 를 다루지 않는다. 중계 서버가 없으면 카메라는 전부 "볼 수 없음" 이다. 실제 중계 서버·카메라 연결은 **G11 운영 검증 대기**.
+- **CCTV 재생 방식은 `mp4`·`snapshot` 둘뿐이다**: HLS·WebRTC 는 넣지 않았다. HLS 는 조각 파일마다 전달 경로가 필요하고, WebRTC 는 Worker 가 중계할 수 없다. 모르는 방식은 저장도 재생도 거부한다.
+- **영상 화면은 한국어만 있다**: FIRMMIT 요청(경영진 전용). 우즈베크어·러시아어로 보아도 이 화면만 한국어로 나온다.
+- **브라우저 재생은 실제 H.264 영상으로 확인하지 못했다**: 시험 환경에서 H.264 로 인코딩할 수 없어, 사진(JPEG) 방식만 브라우저에서 실제로 띄워 확인했다. 영상 방식은 **G11 운영 검증 대기**. `[재확인 필요]`
 - **알림 OFF**: 가용성 변화는 감사기록에만 남고 발송 코드는 없다(Phase 3).
 - **그룹 자동 동기화는 로컬 시험까지만 확인**: 실제 Cloudflare Access API 응답 모양(특히 `result_info` 유무, `require` 규칙의 실제 형태)은 **운영 검증 대기(G01)**. 공식 문서(2026-09-17 확인)에 맞춘 가짜 서버로만 왕복 시험했다. `email_list` 규칙은 목록 조회 API 를 확인하지 않아 **지원하지 않고 실패 처리**한다 `[재확인 필요]`.
 - 자동 동기화는 **이메일 규칙만** 해석한다. Access 쪽에서 그룹 규칙을 도메인·Everyone 등으로 바꾸면 그 시점부터 동기화가 계속 실패하고(사본은 유지) 30분 뒤 비ADMIN 쓰기가 막힌다 — 관리 화면의 실패 사유를 보고 되돌려야 한다.

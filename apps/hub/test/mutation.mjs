@@ -83,6 +83,21 @@ const MUTANTS = [
   ],
   ['tokens: 차단 규칙 제거', 'src/tokens/refresh.ts', '  if (block !== null) {', '  if (false && block !== null) {'],
   ['tokens: 기본 꺼짐 무시', 'src/tokens/refresh.ts', "return env.TOKEN_REFRESH_ENABLED === 'true';", "return env.TOKEN_REFRESH_ENABLED !== 'true';"],
+  // R3 CCTV
+  ['cctv: ADMIN 확인 끔', 'src/cctv.ts', "if (!c.get('principal').isHubAdmin)", 'if (false)'],
+  ['cctv: 기본 꺼짐 무시', 'src/cctv.ts', "return env.CCTV_ENABLED === 'true';", "return env.CCTV_ENABLED !== 'true';"],
+  ['cctv: 경로 되감기 검사 끔 (조각·인코딩 우회)', 'src/cctv.ts', "return u.origin === 'https://relay.invalid' && `${u.pathname}${u.search}` === v;", 'return true;'],
+  ["cctv: 경로 '..' 검사 끔", 'src/cctv.ts', "if (v.includes('..')) return false;", ''],
+  ['cctv: 볼 수 있음 판정 끔', 'src/cctv.ts', /const playable =\n[\s\S]*?\/\/ MUTATION:CCTV-PLAYABLE/, 'const playable = true;'],
+  ['cctv: 중계 서버 응답 형식 확인 끔', 'src/cctv.ts', 'if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {', 'if (false) {'],
+  ['cctv: 중계 서버 응답 코드 확인 끔', 'src/cctv.ts', 'if (upstream.status !== 200 && upstream.status !== 206) {', 'if (false) {'],
+  [
+    'cctv: 중계 서버 머리말을 그대로 내보냄',
+    'src/cctv.ts',
+    /  for \(const k of PASS_RESPONSE_HEADERS\) \{\n[\s\S]*?\n  \}\n/,
+    '  upstream.headers.forEach((v, k) => out.set(k, v));\n',
+  ],
+  ['cctv: 표 제약(미연결↔경로 짝) 제거', 'migrations/0007_cctv.sql', /  CHECK \(\(status = 'not_connected'[\s\S]*?stream_path IS NOT NULL\)\)/, '  CHECK (1 = 1)'],
 ];
 
 function prepare(name, mutate) {

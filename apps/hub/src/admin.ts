@@ -13,6 +13,7 @@ import {
   snapshotDiff,
   snapshotReplaceStmts,
 } from './groupsync';
+import { CAMERA_ID_RE, getCamera, listCameras, relayOrigin, isEnabled as isCctvEnabled, STREAM_KINDS, streamPathValidator, toView } from './cctv';
 import { ApiError, errorIncludes, jsonError } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
 import { isEnabled as isTokenRefreshEnabled, tokenStatuses } from './tokens/refresh';
@@ -24,6 +25,14 @@ const EMP_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 const ID_RE = /^[1-9][0-9]{0,15}$/;
 
 const reason = { v: str({ max: 500 }), optional: true } as const;
+
+// 정렬 순서: 0 이상 9999 이하의 정수만 (실수·NaN·범위 밖 거부)
+function sortNumber(v: unknown, field: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 9999) {
+    throw new ValidationError('invalid_value', field);
+  }
+  return v;
+}
 
 export function adminRoutes() {
   const r = new Hono<HubEnv>();
@@ -342,6 +351,76 @@ export function adminRoutes() {
       tokens: await tokenStatuses(c.env.DB, c.get('now')),
     }),
   );
+
+  // R3 CCTV 카메라 등록 (허브 자체 관리 입력 — 하위 앱·카메라에 쓰지 않는다).
+  // 중계 서버 **안에서의 경로만** 받는다. 서버 주소·카메라 계정은 설정값·중계 서버 쪽에 있다.
+  r.get('/cctv', async (c) => {
+    const relayReady = isCctvEnabled(c.env) && relayOrigin(c.env) !== null;
+    const rows = await listCameras(c.env.DB);
+    return c.json({
+      enabled: isCctvEnabled(c.env),
+      relay_configured: relayReady,
+      cameras: rows.map((row) => ({ ...toView(row, relayReady), sort: row.sort, updated_at: row.updated_at })),
+    });
+  });
+
+  r.post('/cctv', async (c) => {
+    const body = objectOf({
+      camera_id: { v: str({ min: 2, max: 64, pattern: CAMERA_ID_RE }) },
+      name_ko: { v: str({ max: 100 }) },
+      site: { v: str({ max: 64 }) },
+      stream_kind: { v: oneOf(STREAM_KINDS) },
+      // 미연결로 두려면 null. 연결하려면 '/' 로 시작하는 경로.
+      stream_path: { v: streamPathValidator, nullable: true },
+      sort: { v: sortNumber, optional: true },
+      reason,
+    })(await readJsonBody(c.req.raw), '');
+
+    // 경로가 없으면 미연결, 있으면 연결 — 상태를 따로 받지 않아 어긋날 수 없다
+    const status = body.stream_path === null ? 'not_connected' : 'active';
+    const db = c.env.DB;
+    const before = await getCamera(db, body.camera_id);
+    const now = c.get('now').toISOString();
+    const actor = c.get('principal').email;
+    const sort = body.sort ?? before?.sort ?? 0;
+
+    await runAudited(db, async () => ({
+      stmts: [
+        db
+          .prepare(
+            `INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(camera_id) DO UPDATE SET
+               name_ko = excluded.name_ko, site = excluded.site, stream_kind = excluded.stream_kind,
+               stream_path = excluded.stream_path, status = excluded.status, sort = excluded.sort,
+               updated_at = excluded.updated_at`,
+          )
+          .bind(body.camera_id, body.name_ko, body.site, body.stream_kind, body.stream_path, status, sort, before?.created_at ?? now, now),
+      ],
+      entry: {
+        ts: now,
+        actor_email: actor,
+        action: before === null ? 'cctv_camera_create' : 'cctv_camera_update',
+        target: `camera:${body.camera_id}`,
+        // 경로는 감사기록에 넣지 않는다. 바뀌었는지 여부만 남긴다.
+        detail: {
+          name_ko: body.name_ko,
+          site: body.site,
+          stream_kind: body.stream_kind,
+          status,
+          path_changed: (before?.stream_path ?? null) !== body.stream_path,
+          from_status: before?.status ?? null,
+          reason: body.reason ?? null,
+        },
+        request_id: c.get('requestId'),
+      },
+    }));
+
+    const row = await getCamera(db, body.camera_id);
+    if (row === null) throw new ApiError(500, 'internal_error', 'Internal error');
+    const relayReady = isCctvEnabled(c.env) && relayOrigin(c.env) !== null;
+    return c.json({ camera: toView(row, relayReady) }, before === null ? 201 : 200);
+  });
 
   r.get('/audit', async (c) => {
     const q = c.req.query();

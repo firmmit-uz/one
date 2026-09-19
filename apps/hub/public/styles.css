@@ -290,3 +290,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 @media (max-width: 640px) {
   .kpi-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- CCTV (R3) ---------- */
+/* 영상은 같은 출처에서만 받는다. 외부 주소를 직접 걸지 않는다. */
+.cctv-stage:empty { display: none; }
+.cctv-stage { margin: 0 0 20px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.cctv-media { display: block; width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #292c34; border-radius: var(--radius); object-fit: contain; }
+.note { color: var(--text-2); font-size: 13px; margin: 16px 0 0; }
