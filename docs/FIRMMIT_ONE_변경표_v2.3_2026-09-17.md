@@ -239,6 +239,7 @@ FIRMMIT 확인: **Tapo 는 휴대폰 앱 전용이고 웹 콘솔이 없다.** �
 | **Z46** | `test/headers.test.ts` · `wrangler.jsonc` | 인수인계서 §5 함정 | 변수 2개(`CCTV_ENABLED`·`CCTV_RELAY_ORIGIN`) 추가 → `vars` **정확 비교를 새 값으로 갱신**(부분 비교로 완화하지 않았다). 접속표가 설정 값에 들어가지 않는지 검사 추가 | `headers.test.ts` | 통과 | 재시험 통과 | — |
 | **Z47** | `test/headers.test.ts` | 보안 | **CSP 전제를 시험으로 못 박았다** — `media-src` 를 두지 않아 `default-src 'self'` 가 적용된다(같은 출처 영상만 재생). 누가 `media-src` 를 넣거나 `default-src` 를 넓히면 시험이 실패한다 | CSP 시험 1건 | 통과 | 재시험 통과 | — |
 | **Z49** | `src/cctv.ts` · `src/env.ts` · `wrangler.jsonc` | 중계 프로그램 실제 확인 | **인증 방식을 고쳤다.** 처음에 `Authorization: Bearer` 로 만들었으나 실제 중계 프로그램(go2rtc)은 **Basic 인증**을 쓰고, Cloudflare Tunnel 과 함께 쓰면 **서비스 토큰 머리말 2개**를 쓴다 → `CCTV_RELAY_AUTH` 로 `none`·`basic`·`cf-access` 중 고르게 바꿨다. **방법을 정해 놓고 값이 없으면 재생 거부**(조용히 익명으로 부르지 않는다) | 인증 시험 6건 + 변이 2건 | 통과 | 수정함 | G11 |
+| **Z51** | `apps/hub/docs/cctv-relay/go2rtc.example.yaml` (신규) · `README.md` 4.3 · `test/cctv.test.ts` | FIRMMIT 확인 — 카메라는 **AKIS 온실**(Yuqori Chirchiq) | 설치 절차·설정 보기를 **AKIS 기준 실제 값**으로 확정(`akis-gh1` 등). 온실 현장 항목(습기·정전·무선·현지 업로드) 추가. **문서에 적은 값이 실제로 통과하는지 시험 3건으로 고정** — 문서와 코드가 어긋나면 현장에서 시간을 잃는다 | 시험 3건 신규 | 통과 | 재시험 통과 | G11 |
 | **Z50** | `apps/hub/README.md` 4.3 | FIRMMIT 지시 "방법을 찾아" | **타슈켄트 현장 설치 절차**를 단계별로 작성 — 카메라 계정 발급 · go2rtc 설치·설정 · 절전 해제 · Cloudflare Tunnel · 잠그기 2가지 · 허브 Secret·변수 · 카메라 등록 · 해외 구간 대역폭 주의 | 문서 | — | 운영 검증 대기 | G11 |
 | **Z48** | `src/cctv.ts` | 인수인계서 §9-3 | 자리표시자 검사가 주소·형식 검사와 **겹쳐** 변이가 살아남았다 → 겹치는 검사를 없애 관문을 한 군데로 모았다(동작은 그대로, 시험으로 확인) | 변이 36/36 미검출 0 | 통과 | 수정함 | — |
 
@@ -247,7 +248,7 @@ FIRMMIT 확인: **Tapo 는 휴대폰 앱 전용이고 웹 콘솔이 없다.** �
 | # | 명령 | 이번 작업 전 | 작업 뒤 | 종료코드 | 판정 |
 |---|---|---|---|---|---|
 | 1 | `npm test -w packages/contracts` | 85건·불일치 0 / 60/60 / 17/17 / 17/17 / 21/21 | **동일** | 0 | ✅ 유지 |
-| 2 | `npm test -w apps/hub` | 11파일 · **247/247** | 12파일 · **291/291** (+44) | 0 | ✅ 증가 |
+| 2 | `npm test -w apps/hub` | 11파일 · **247/247** | 12파일 · **294/294** (+47) | 0 | ✅ 증가 |
 | 3 | `npm run typecheck -w apps/hub` | 오류 0 | 오류 **0** | 0 | ✅ |
 | 4 | `npm run test:mutation -w apps/hub` | **27/27** | **38/38** 검출 · 미검출 0 (+11) | 0 | ✅ 증가 |
 | 5 | `npm run test:bundle -w apps/hub` | 9/9 · 금지 0건 | **9/9** · 금지 **0건** | 0 | ✅ 유지 |

@@ -263,6 +263,17 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 **중계 PC 는 카메라와 같은 사내망(같은 공유기) 안에 있어야 한다.** Tapo 의 RTSP 는 같은 망에서만 열린다.
 보는 사람은 어디에 있어도 된다 — 허브를 거치기 때문이다. 시설이 여러 곳이면 **시설마다 중계 PC 1대씩** 필요하다.
 
+**이번 대상 (FIRMMIT 확인, 2026-09-19)**
+
+| 항목 | 값 |
+|---|---|
+| 카메라가 있는 곳 | **AKIS 온실** — Toshkent viloyati, Yuqori Chirchiq tumani |
+| 중계 PC 를 둘 곳 | **AKIS 온실 안** (카메라와 같은 공유기) |
+| 보는 곳 | 천안·서울 등 **어디서든** (허브를 거친다) |
+| 천안 사무실 PC | **중계에 쓸 수 없다** — 카메라와 망이 다르다 |
+
+설정 보기: **`apps/hub/docs/cctv-relay/go2rtc.example.yaml`** (자리표시자를 실제 값으로 바꿔 쓴다)
+
 #### 4.3.1 중계 PC 에 할 일 (카메라가 있는 시설에서)
 
 1. **Tapo 앱에서 카메라 계정 만들기**
@@ -274,16 +285,21 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    내려받기: <https://github.com/AlexxIT/go2rtc/releases> 의 `go2rtc_win64.zip` (Windows 10 이상 64비트).
    압축을 풀고 같은 폴더에 `go2rtc.yaml` 을 만든다:
 
+   전체 보기는 **`apps/hub/docs/cctv-relay/go2rtc.example.yaml`** 에 있다. 요지는 이렇다:
+
    ```yaml
    api:
      listen: "127.0.0.1:1984"   # 바깥에 직접 열지 않는다. 터널만 통과시킨다.
 
    streams:
-     cheonan-gate:  # 허브에 등록할 이름과 같게 맞추면 헷갈리지 않는다
-       - rtsp://<카메라아이디>:<카메라비밀번호>@192.168.0.101:554/stream1
-     icheon-vfarm:
-       - rtsp://<카메라아이디>:<카메라비밀번호>@192.168.0.102:554/stream2
+     akis-gh1:  # 허브에 등록할 camera_id 와 같게 맞추면 헷갈리지 않는다
+       - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-1>:554/stream2
+     akis-gh2:
+       - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-2>:554/stream2
    ```
+
+   **`stream2`(저화질)로 시작하는 것을 권한다** — 우즈베키스탄에서 한국까지 나가는 업로드가 좁을 수 있다.
+   잘 보이면 그때 `stream1`(고화질)로 올린다.
 
    `go2rtc.exe` 를 실행하고 <http://127.0.0.1:1984/> 에서 영상이 보이는지 먼저 확인한다.
    여기서 안 보이면 그 다음 단계는 의미가 없다 — 카메라 계정·IP·같은 망인지부터 다시 본다.
@@ -292,8 +308,8 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 
    | 재생 방식 | 경로 | 형식 |
    |---|---|---|
-   | `mp4` (실시간 영상) | `/api/stream.mp4?src=cheonan-gate` | `video/mp4` |
-   | `snapshot` (사진) | `/api/frame.jpeg?src=cheonan-gate` | `image/jpeg` |
+   | `mp4` (실시간 영상) | `/api/stream.mp4?src=akis-gh1` | `video/mp4` |
+   | `snapshot` (사진) | `/api/frame.jpeg?src=akis-gh1` | `image/jpeg` |
 
    허브는 이 두 형식만 받는다. 다른 형식이 오면 502 로 막는다.
 
@@ -331,8 +347,8 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    **자리표시자 `<CCTV_RELAY_ORIGIN>` 그대로면 꺼진 것과 같게 동작한다.**
 3. 배포 후 관리 화면(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다**:
    ```json
-   { "camera_id": "tashkent-akis-1", "name_ko": "타슈켄트 AKIS 1번", "site": "타슈켄트",
-     "stream_kind": "mp4", "stream_path": "/api/stream.mp4?src=tashkent-akis-1" }
+   { "camera_id": "akis-gh1", "name_ko": "AKIS 온실 1동", "site": "타슈켄트 AKIS",
+     "stream_kind": "mp4", "stream_path": "/api/stream.mp4?src=akis-gh1" }
    ```
 4. `CCTV_ENABLED` 를 `"true"` 로 바꾸고 배포 → *CCTV* 화면에서 확인
 
@@ -345,7 +361,16 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 | **지연** | 진행형 MP4 는 보통 수 초 지연된다. 실시간 관제용이 아니라 **상황 확인용**으로 보아야 한다 `[재확인 필요]` |
 | **정전·회선 단절** | 중계 PC 나 현지 회선이 끊기면 화면은 `502` 로 뜬다. 허브가 끊긴 것을 "정상" 으로 표시하지는 않는다 |
 
-#### 4.3.4 그 밖에 남은 것
+#### 4.3.4 온실 현장이라서 더 볼 것
+
+| 항목 | 내용 |
+|---|---|
+| **PC 를 둘 자리** | 온실 안은 습기·먼지·온도 변화가 크다. 사무실·제어실처럼 **환경이 안정된 칸**에 두고, 거기서 카메라와 같은 공유기에 붙인다 |
+| **정전** | 온실은 정전이 잦을 수 있다. 정전되면 화면이 `502` 로 뜬다(끊긴 것을 "정상" 으로 표시하지 않는다). 무정전 장치(UPS)를 붙이면 짧은 정전은 넘긴다 `[재확인 필요]` |
+| **무선 연결** | 카메라가 Wi-Fi 로 붙어 있으면 온실 구조물·습기 때문에 끊길 수 있다. 가능하면 유선을 권한다 |
+| **현지 인터넷** | 온실 회선의 **업로드** 속도를 먼저 재 본다. 좁으면 `stream2`·`snapshot` 으로 시작한다 |
+
+#### 4.3.5 그 밖에 남은 것
 
 - **노무·법무 검토**: 직원이 찍히는 화면을 상시 열람하는 형태가 되면 근로자 감시 문제가 생길 수 있다.
   기술적으로는 열람 기록(`cctv_view_open` 감사기록)과 ADMIN 제한이 들어가 있으나, 한국·우즈베키스탄 법령 판단은 이 문서 범위 밖이다. `[재확인 필요]`

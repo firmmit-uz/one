@@ -193,6 +193,44 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
   });
 });
 
+describe('문서에 적은 실제 값이 그대로 통과하는가 (README 4.3 · go2rtc 보기)', () => {
+  // 문서와 코드가 어긋나면 현장에서 "왜 안 되지" 로 시간을 잃는다.
+  // AKIS 온실(Yuqori Chirchiq) 기준 값을 여기서 고정한다.
+  const AKIS = [
+    { camera_id: 'akis-gh1', stream_kind: 'mp4' as const, stream_path: '/api/stream.mp4?src=akis-gh1' },
+    { camera_id: 'akis-gh2', stream_kind: 'snapshot' as const, stream_path: '/api/frame.jpeg?src=akis-gh2' },
+    { camera_id: 'akis-gate', stream_kind: 'mp4' as const, stream_path: '/api/stream.mp4?src=akis-gate' },
+  ];
+
+  it('go2rtc 가 내보내는 경로가 경로 검사를 통과한다', () => {
+    for (const c of AKIS) expect(isSafeStreamPath(c.stream_path)).toBe(true);
+  });
+
+  it('카메라 등록 API 가 그 값을 그대로 받는다', async () => {
+    const h = await cctvHarness();
+    const t = await h.token(ADMIN);
+    for (const c of AKIS) {
+      const res = await h.call('/api/admin/cctv', {
+        token: t,
+        body: { ...c, name_ko: 'AKIS 온실', site: '타슈켄트 AKIS' },
+      });
+      expect([200, 201]).toContain(res.status);
+      expect((await json(res)).camera).toMatchObject({ camera_id: c.camera_id, status: 'active', playable: true });
+    }
+  });
+
+  it('합쳐진 주소가 중계 서버 안을 벗어나지 않는다', async () => {
+    const h = await cctvHarness();
+    for (const c of AKIS) addCamera(h.sqlite, c);
+    const t = await h.token(ADMIN);
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    for (const c of AKIS) await h.call(`/api/cctv/${c.camera_id}/play`, { token: t });
+    spy.mockRestore();
+    for (const call of h.calls) expect(new URL(call.url).origin).toBe(RELAY);
+    expect(h.calls.map((c) => c.url)).toEqual(AKIS.map((c) => `${RELAY}${c.stream_path}`));
+  });
+});
+
 describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
   const row = (o: Partial<CameraRow> = {}): CameraRow => ({
     camera_id: 'cam-1',
