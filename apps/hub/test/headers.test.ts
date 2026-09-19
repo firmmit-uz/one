@@ -61,6 +61,20 @@ describe('보안 헤더·캐시', () => {
     spy.mockRestore();
   });
 
+  // R3 CCTV 영상은 같은 출처(/api/cctv/:id/play)로만 받는다.
+  // CSP 에 media-src 를 따로 두지 않으므로 default-src 'self' 가 적용된다
+  // → 같은 출처 영상은 재생되고, 중계 서버 주소를 브라우저에 직접 주면 막힌다.
+  // 이 전제가 깨지면(누가 media-src 를 넣거나 default-src 를 넓히면) 여기서 실패해야 한다.
+  it('CSP: 영상은 같은 출처만 — media-src 를 따로 두지 않고 default-src 는 self 만', () => {
+    const csp = SECURITY_HEADERS['Content-Security-Policy']!;
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).not.toMatch(/media-src/);
+    expect(csp).not.toMatch(/default-src [^;]*\*/);
+    expect(csp).not.toMatch(/default-src [^;]*https:(?!\/)/);
+    const staticCsp = readFileSync(join(HUB_DIR, 'public', '_headers'), 'utf8');
+    expect(staticCsp).not.toMatch(/media-src/);
+  });
+
   it('public/_headers 가 같은 보안 헤더를 정적 자산에 적용', () => {
     const text = readFileSync(join(HUB_DIR, 'public', '_headers'), 'utf8');
     const lines = text.split('\n');
@@ -83,7 +97,8 @@ describe('보안 헤더·캐시', () => {
     expect(cfg.compatibility_date).toBe('2026-09-01');
     expect(cfg.assets).toEqual({ directory: './public', run_worker_first: ['/api/*'], not_found_handling: 'single-page-application' });
     expect(cfg.d1_databases[0]).toMatchObject({ binding: 'DB', database_id: '<D1_DATABASE_ID>' });
-    // WP1 에서 CF_ACCOUNT_ID(자리표시자)와 */15 Cron 추가 — 값은 정확 비교를 유지한다
+    // WP1 에서 CF_ACCOUNT_ID(자리표시자)와 */15 Cron 추가, R3 에서 CCTV 변수 2개 추가
+    // — 값은 정확 비교를 유지한다 (부분 비교로 완화하지 않는다)
     expect(cfg.vars).toEqual({
       ENVIRONMENT: 'production',
       ACCESS_TEAM: '<TEAM>',
@@ -91,6 +106,9 @@ describe('보안 헤더·캐시', () => {
       ALLOWED_ORIGIN: 'https://<허브 주소>',
       CF_ACCOUNT_ID: '<CF_ACCOUNT_ID>',
       TOKEN_REFRESH_ENABLED: 'false',
+      CCTV_ENABLED: 'false',
+      CCTV_RELAY_ORIGIN: '<CCTV_RELAY_ORIGIN>',
+      CCTV_RELAY_AUTH: 'none',
     });
     expect(cfg.vars.DEV_FAKE_IDENTITY).toBeUndefined();
     // 비밀값(API 토큰)은 설정에 없어야 한다 — Worker Secret 으로만 넣는다
@@ -100,6 +118,11 @@ describe('보안 헤더·캐시', () => {
     expect(cfg.triggers.crons).toEqual(['*/5 * * * *', '*/15 * * * *', '0 * * * *']);
     // 암호화 키는 설정에 없어야 한다 (Worker Secret 으로만)
     expect(JSON.stringify(cfg)).not.toMatch(/TOKEN_KEY/);
+    // CCTV 접속표도 설정 값으로 들어가면 안 된다 (Worker Secret 으로만)
+    for (const k of ['CCTV_RELAY_USER', 'CCTV_RELAY_PASS', 'CCTV_RELAY_CF_ID', 'CCTV_RELAY_CF_SECRET']) {
+      expect(cfg.vars[k]).toBeUndefined();
+      expect(JSON.stringify(cfg)).not.toMatch(new RegExp(k));
+    }
     expect(cfg.observability.enabled).toBe(true);
     expect(cfg.env.development.vars.ENVIRONMENT).toBe('development');
     expect(cfg.env.development.vars.DEV_FAKE_IDENTITY).toMatch(/@example\.invalid$/);

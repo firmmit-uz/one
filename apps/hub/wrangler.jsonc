@@ -28,7 +28,17 @@
     "CF_ACCOUNT_ID": "<CF_ACCOUNT_ID>",
     // WP3 외부 토큰 갱신. 기본 꺼짐 — 켜기 전 조건은 README 배포 안내서를 따른다.
     // "true" 일 때만 켜진다. 짝이 되는 암호화 키 TOKEN_KEY_V1 은 Worker Secret.
-    "TOKEN_REFRESH_ENABLED": "false"
+    "TOKEN_REFRESH_ENABLED": "false",
+    // R3 CCTV 보기. 기본 꺼짐 — "true" 일 때만 켜진다.
+    // CCTV_RELAY_ORIGIN 은 사내 CCTV 중계 서버 주소(https). 자리표시자이면 꺼진 것으로 본다.
+    // CCTV_RELAY_AUTH 는 중계 서버에 자신을 밝히는 방법: none | basic | cf-access.
+    //   basic     → CCTV_RELAY_USER · CCTV_RELAY_PASS
+    //   cf-access → CCTV_RELAY_CF_ID · CCTV_RELAY_CF_SECRET
+    //   넷 다 Worker Secret — 여기에 넣지 않는다. 값이 없으면 재생을 막는다(익명 호출 금지).
+    // 카메라 RTSP 주소·계정은 중계 서버에만 두고 허브에 넣지 않는다.
+    "CCTV_ENABLED": "false",
+    "CCTV_RELAY_ORIGIN": "<CCTV_RELAY_ORIGIN>",
+    "CCTV_RELAY_AUTH": "none"
   },
   // */5 가용성 점검·내부 KPI · */15 Access 그룹 동기화 · 매시 정각 토큰 갱신
   // (계정 Cron 합계는 README 4.1 참고)

@@ -65,7 +65,30 @@ await appendAudit(db, { ts: iso(-900_000), actor_email: 'system:cron', action: '
 await appendAudit(db, { ts: iso(-600_000), actor_email: 'admin1@example.test', action: 'grant_create', target: 'grant:1', detail: { email: 'staff1@example.test', app_id: 'amim', role: 'MANAGER', scope: 'UZ', expires_at: null, reason: null }, request_id: 'r-1' });
 await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.test', action: 'user_status_change', target: 'user:left@example.test', detail: { from: 'active', to: 'revoked', reason: '퇴사' }, request_id: 'r-2' });
 
-const app = createApp();
+// R3 CCTV 화면 (가짜 카메라 — 실제 카메라·중계 서버 아님)
+const cam = sqlite.prepare(
+  'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+);
+cam.run('cheonan-gate', '천안 정문', '천안', 'mp4', '/live/cheonan-gate.mp4', 'active', 10, now.toISOString(), now.toISOString());
+cam.run('icheon-vfarm', '이천 재배동', '이천', 'snapshot', '/snapshot/icheon.jpg', 'active', 20, now.toISOString(), now.toISOString());
+cam.run('nonsan-apc', '논산 APC', '논산', 'mp4', null, 'not_connected', 30, now.toISOString(), now.toISOString());
+
+// 화면 확인용 설정. CCTV=off 로 두면 "꺼짐" 안내 화면을 찍을 수 있다.
+const CCTV_ON = process.env.CCTV !== 'off';
+
+// 가짜 중계 서버. **실제 네트워크로 나가지 않는다** — 고정 그림 1장만 돌려준다.
+// (화면 시험은 외부 요청 0건이어야 한다. 실제 fetch 를 쓰면 relay.example.test 로 나간다.)
+const TEST_PATTERN = readFileSync(join(HUB_DIR, 'test', 'fixtures', 'cctv-test-pattern.jpg'));
+const fakeRelay = async (url: string): Promise<Response> => {
+  const path = new URL(url).pathname;
+  if (path.startsWith('/snapshot/')) {
+    return new Response(new Uint8Array(TEST_PATTERN), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  }
+  // 영상(mp4)은 만들어 두지 않았다 — 화면 시험에서는 사진 카메라만 연다.
+  return new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+};
+
+const app = createApp({ fetch: fakeRelay });
 const IDENTITIES: Record<string, string> = { admin: 'admin1@example.test', staff: 'staff1@example.test', stranger: 'nobody@example.test' };
 
 function staticHeaders(): Record<string, string> {
@@ -135,6 +158,8 @@ createServer(async (req, res) => {
       DEV_FAKE_IDENTITY: IDENTITIES[as] ?? as,
       // 시험용 값 (실제 계정 정보 아님). 자동 동기화 화면 확인에만 쓰이고 외부 호출은 하지 않는다.
       ...(AUTO_SYNC ? { CF_ACCOUNT_ID: 'acct-test-0001', CF_API_TOKEN: 'test-token_0123456789' } : {}),
+      // 시험용 값. 실제 중계 서버가 아니며 화면 시험은 영상을 재생하지 않는다.
+      ...(CCTV_ON ? { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: 'https://relay.example.test' } : {}),
     };
     const r = await app.fetch(request, env, { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext);
     const h: Record<string, string> = {};

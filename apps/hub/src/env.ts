@@ -12,6 +12,17 @@ export interface Env {
   // WP3 토큰 갱신: 기본 꺼짐("true" 외의 값은 모두 꺼짐). 암호화 키는 Worker Secret.
   TOKEN_REFRESH_ENABLED?: string;
   TOKEN_KEY_V1?: string;
+  // R3 CCTV: 기본 꺼짐("true" 외의 값은 모두 꺼짐).
+  // 중계 서버 주소는 vars(자리표시자), 접속표는 Worker Secret. 카메라 계정은 허브에 두지 않는다.
+  CCTV_ENABLED?: string;
+  CCTV_RELAY_ORIGIN?: string;
+  // 중계 서버에 자신을 밝히는 방법: none | basic | cf-access (vars)
+  CCTV_RELAY_AUTH?: string;
+  // 아래 4개는 전부 Worker Secret — 설정 파일에 넣지 않는다
+  CCTV_RELAY_USER?: string;
+  CCTV_RELAY_PASS?: string;
+  CCTV_RELAY_CF_ID?: string;
+  CCTV_RELAY_CF_SECRET?: string;
 }
 
 export const ROLES = ['VIEWER', 'OPERATOR', 'MANAGER', 'ADMIN'] as const;

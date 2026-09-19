@@ -1,0 +1,45 @@
+# FIRMMIT ONE — CCTV 중계 설정 보기 (go2rtc)
+#
+# 두는 곳: **AKIS 온실 안에 있는 PC** (카메라와 같은 공유기)
+#          Toshkent viloyati, Yuqori Chirchiq tumani
+#   천안·서울 PC 에 두면 동작하지 않는다 — Tapo 의 RTSP 는 같은 망에서만 열린다.
+#
+# 쓰는 법: go2rtc.exe 와 같은 폴더에 `go2rtc.yaml` 이라는 이름으로 두고 실행한다.
+#          자리표시자 <...> 를 실제 값으로 바꾼다. **이 파일을 저장소에 되돌려 넣지 않는다**
+#          (카메라 비밀번호가 들어가기 때문이다).
+
+api:
+  # 바깥에 직접 열지 않는다. Cloudflare Tunnel 만 이 주소로 들어온다.
+  listen: "127.0.0.1:1984"
+  # go2rtc 자체 인증을 쓸 때만 채운다 (허브 쪽 CCTV_RELAY_AUTH="basic").
+  # Cloudflare Access 서비스 토큰을 쓰면(권장) 비워 둔다.
+  # username: "<RELAY_USER>"
+  # password: "<RELAY_PASS>"
+
+# RTSP 서버는 쓰지 않는다 (허브는 HTTP 로만 가져간다)
+rtsp:
+  listen: ""
+
+webrtc:
+  listen: ""
+
+streams:
+  # 이름은 허브에 등록할 camera_id 와 같게 맞춘다 (소문자·숫자·붙임표만).
+  #
+  #   stream1 = 고화질(1080p) · stream2 = 저화질
+  #   우즈베키스탄 → 한국 구간은 업로드가 좁을 수 있으므로 stream2 로 시작해 보는 것을 권한다.
+  #
+  akis-gh1:
+    - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-1>:554/stream2
+  akis-gh2:
+    - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-2>:554/stream2
+  akis-gate:
+    - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-3>:554/stream2
+
+# ── 확인 방법 ─────────────────────────────────────────────
+# 1) go2rtc.exe 실행 → http://127.0.0.1:1984/ 에서 각 카메라가 보이는지 먼저 본다.
+#    여기서 안 보이면 뒤 단계는 의미가 없다 (카메라 계정·IP·같은 망인지부터 확인).
+# 2) 허브에 넣을 경로는 아래 둘 중 하나다:
+#      실시간 영상 : /api/stream.mp4?src=akis-gh1     (video/mp4)
+#      사진 새로고침: /api/frame.jpeg?src=akis-gh1     (image/jpeg)
+#    허브는 이 두 형식만 받는다. 다른 형식이 오면 502 로 막는다.
