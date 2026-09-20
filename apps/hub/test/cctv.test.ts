@@ -27,6 +27,9 @@ interface Upstream {
   type?: string;
   body?: string | ReadableStream;
   idleTimeoutMs?: number;
+  /** 머리말을 영원히 안 준다 (abort 신호가 올 때만 끝난다) */
+  hang?: boolean;
+  connectTimeoutMs?: number;
   headers?: Record<string, string>;
   throws?: boolean;
 }
@@ -41,9 +44,17 @@ async function cctvHarness(envOverrides: Partial<Env> = {}, upstream: Upstream =
     jwks: () => createLocalJWKSet({ keys: [keys.jwk as JWK] }),
     now: () => clock.now,
     ...(upstream.idleTimeoutMs !== undefined ? { cctvIdleTimeoutMs: upstream.idleTimeoutMs } : {}),
+    ...(upstream.connectTimeoutMs !== undefined ? { cctvConnectTimeoutMs: upstream.connectTimeoutMs } : {}),
     fetch: async (url, init) => {
       calls.push({ url, init });
       if (upstream.throws) throw new Error('relay down');
+      if (upstream.hang) {
+        return new Promise<Response>((_, reject) => {
+          const sig = init?.signal;
+          if (sig?.aborted) return reject(new Error('aborted'));
+          sig?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
       const headers = new Headers(upstream.headers ?? {});
       headers.set('content-type', upstream.type ?? ALLOWED_UPSTREAM_TYPES.mp4);
       const status = upstream.status ?? 200;
@@ -880,5 +891,32 @@ describe('관리 등록 — 경로를 빼면 이전 경로를 지킨다', () => 
     // 새 등록에서 생략 — 미연결
     expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, camera_id: 'akis-gh7' } })).status).toBe(201);
     expect((h.sqlite.prepare("SELECT status FROM cctv_cameras WHERE camera_id = 'akis-gh7'").get() as { status: string }).status).toBe('not_connected');
+  });
+});
+
+describe('CCTV 전달 — 머리말 대기 시간 · 방식 변경', () => {
+  it('중계 서버가 머리말을 영원히 안 주면 정해진 시간 뒤 끊고 502 relay_unreachable', async () => {
+    const h = await cctvHarness({}, { hang: true, connectTimeoutMs: 30 });
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const t0 = Date.now();
+    const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
+    spy.mockRestore();
+    expect(res.status).toBe(502);
+    expect((await json(res)).error.code).toBe('relay_unreachable');
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+
+  it('재생 방식을 바꾸면서 경로를 빼면 거부한다 (옛 경로를 새 방식에 물려주지 않는다)', async () => {
+    const h = await cctvHarness();
+    const t = await h.token(ADMIN);
+    const base = { camera_id: 'akis-gh6', name_ko: '6번', site: 'AKIS' };
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_kind: 'mp4', stream_path: '/api/stream.mp4?src=akis-gh6' } })).status).toBe(201);
+    const res = await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_kind: 'snapshot' } });
+    expect(res.status).toBe(400);
+    // 경로를 같이 주면 된다
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_kind: 'snapshot', stream_path: '/api/frame.jpeg?src=akis-gh6' } })).status).toBe(200);
+    // 같은 방식이면 경로를 빼도 유지된다
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_kind: 'snapshot', name_ko: '6번 (수정)' } })).status).toBe(200);
   });
 });

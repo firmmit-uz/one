@@ -30,6 +30,8 @@ export interface AppDeps {
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** CCTV 전달 중 몸통이 이만큼 멈추면 끊는다 (시험에서만 줄인다) */
   cctvIdleTimeoutMs?: number;
+  /** CCTV 중계 서버가 머리말을 이만큼 안 주면 끊는다 (시험에서만 줄인다) */
+  cctvConnectTimeoutMs?: number;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
@@ -183,7 +185,11 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.route('/api/kpi', kpiRoutes());
-  app.route('/api/cctv', cctvRoutes({ fetch: doFetch, ...(deps.cctvIdleTimeoutMs !== undefined ? { idleTimeoutMs: deps.cctvIdleTimeoutMs } : {}) }));
+  app.route('/api/cctv', cctvRoutes({
+    fetch: doFetch,
+    ...(deps.cctvIdleTimeoutMs !== undefined ? { idleTimeoutMs: deps.cctvIdleTimeoutMs } : {}),
+    ...(deps.cctvConnectTimeoutMs !== undefined ? { connectTimeoutMs: deps.cctvConnectTimeoutMs } : {}),
+  }));
   app.route('/api/admin', adminRoutes());
 
   app.notFound((c) => jsonError(c, 404, 'not_found', 'Not found'));

@@ -715,11 +715,14 @@ async function viewCctv(main) {
           opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
         } catch (err) {
           open.disabled = false;
+          if (!stage.isConnected) return;
           stopCctv(); // 보고 있던 다른 카메라가 있으면 먼저 끊는다 — 무대만 갈아엎으면 스트림이 살아남는다
           put(stage, inlineError(err));
           return;
         }
         open.disabled = false;
+        // 기다리는 동안 화면을 떠났으면 시작하지 않는다 — 떼어진 <video> 도 자동재생으로 중계 연결을 연다
+        if (!stage.isConnected) return;
         if (typeof opened.play_path !== 'string') {
           // 토큰 없는 경로는 서버가 반드시 거부한다 → 재생 실패로 위장하지 않고 응답 형식 오류로 알린다
           stopCctv();
@@ -738,40 +741,52 @@ async function viewCctv(main) {
         let expiresAt = localExpiry(opened);
         let retries = 0;
         let reopenedOnFail = false;
+        let closed = false; // 닫기를 눌렀으면 기다리던 /open 이 돌아와도 다시 끼워 넣지 않는다
+        const alive = () => stage.isConnected && !closed;
+        // 예약 타이머는 한 개만 — 새로 걸기 전에 반드시 지운다 (지우지 않으면 닫은 뒤에도 옛 예약이 살아 다시 연다)
+        const armTimer = (fn, ms) => {
+          if (cctvReopenTimer !== null) window.clearTimeout(cctvReopenTimer);
+          cctvReopenTimer = window.setTimeout(fn, ms);
+        };
         const start = () => {
           put(stage,
             el('div', { class: 'section-head' },
               el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
-              el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
+              el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { closed = true; stopCctv(); put(stage); } })),
             cctvPlayer(cam, currentPath, onFail));
           scheduleReopen();
         };
         function scheduleReopen() {
           if (!Number.isFinite(expiresAt)) return;
           // 만료 30초 전에 다시 연다. 수명이 이상하게 짧아도 1분보다 자주 열지 않는다 (열람 기록이 초 단위로 쌓이지 않게)
-          const wait = Math.max(60 * 1000, expiresAt - Date.now() - 30 * 1000);
-          cctvReopenTimer = window.setTimeout(reopen, wait);
+          armTimer(reopen, Math.max(60 * 1000, expiresAt - Date.now() - 30 * 1000));
         }
-        async function reopen() {
-          if (!stage.isConnected) return stopCctv();
+        async function reopen(rebuild = cam.stream_kind !== 'mp4') {
+          if (!alive()) return stopCctv();
           try {
             const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
+            if (!alive()) return stopCctv();
             if (typeof again.play_path !== 'string') return showFail();
             currentPath = again.play_path;
             expiresAt = localExpiry(again);
             retries = 0;
-            start();
+            // mp4 는 열려 있는 진행형 스트림을 그대로 둔다 — 토큰은 요청 시작 때만 확인되므로 새 토큰은 다음 오류 때부터 쓴다.
+            // 사진 방식은 매번 새 요청이라 새 토큰으로 다시 만든다.
+            if (rebuild) start();
+            else scheduleReopen();
           } catch (err) {
+            if (!alive()) return stopCctv();
             // /open 은 상태 코드가 있다 — 재생 실패로 뭉뚱그리지 않고 원인을 보여 준다
             stopCctv();
             put(stage, inlineError(err));
           }
         }
         function onFail() {
-          if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) return reopen();
-          if (retries < 2) { retries++; cctvReopenTimer = window.setTimeout(start, 1500 * retries); return; }
+          if (!alive()) return stopCctv();
+          if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) return reopen(true);
+          if (retries < 2) { retries++; armTimer(start, 1500 * retries); return; }
           // 만료 전인데 계속 실패 — 토큰·카메라 상태를 서버에서 새로 확인해 본다 (한 번)
-          if (!reopenedOnFail) { reopenedOnFail = true; return reopen(); }
+          if (!reopenedOnFail) { reopenedOnFail = true; return reopen(true); }
           showFail();
         }
         start();

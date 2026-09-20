@@ -379,6 +379,11 @@ export function adminRoutes() {
       const before = await getCamera(db, body.camera_id);
       const sort = body.sort ?? before?.sort ?? 0;
       // 경로: 보낸 값 > 이전 값 > 없음. 상태는 경로에서만 정한다 — 따로 받지 않아 어긋날 수 없다
+      // 단, 재생 방식이 바뀌는데 경로를 빼면 거부한다 — 옛 경로(예: .mp4)를 새 방식(사진)에 물려주면
+      // 목록은 "볼 수 있음" 인데 재생은 형식 불일치로 늘 막히는 어긋남이 생긴다.
+      if (body.stream_path === undefined && before !== null && before.stream_path !== null && before.stream_kind !== body.stream_kind) { // MUTATION:ADMIN-KIND-CHANGE
+        throw new ValidationError('stream_path_required', 'stream_path');
+      }
       const stream_path: string | null = body.stream_path === undefined ? (before?.stream_path ?? null) : body.stream_path;
       const status = stream_path === null ? 'not_connected' : 'active';
       seen.before = before;

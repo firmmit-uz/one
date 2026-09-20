@@ -56,30 +56,38 @@ export const IDLE_TIMEOUT_MS = 30_000;
  */
 export function withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number, onIdle: () => void): ReadableStream<Uint8Array> {
   const reader = body.getReader();
-  const STALL = Symbol('stall');
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stalled = false;
+  let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const stall = () => {
+    stalled = true;
+    onIdle(); // 위쪽 연결을 끊는다
+    reader.cancel().catch(() => undefined); // 기다리던 read() 가 done 으로 풀린다
+    try { ctrl?.error(new Error('CCTV relay stalled')); } catch { /* 이미 닫힘 */ }
+  };
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      ctrl = controller;
+    },
     async pull(controller) {
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      const stall = new Promise<typeof STALL>((resolve) => {
-        timer = setTimeout(() => resolve(STALL), idleMs);
-      });
+      // 조각을 기다리는 동안만 잰다 — 타이머 하나를 걸고, 오면 지운다 (조각마다 Promise 를 만들지 않는다)
+      timer = setTimeout(stall, idleMs);
+      let r: ReadableStreamReadResult<Uint8Array>;
       try {
-        const r = await Promise.race([reader.read(), stall]);
-        if (r === STALL) {
-          onIdle(); // 위쪽 연결을 끊는다
-          reader.cancel().catch(() => undefined);
-          controller.error(new Error('CCTV relay stalled'));
-          return;
-        }
-        if (r.done) controller.close();
-        else controller.enqueue(r.value);
+        r = await reader.read();
       } catch (err) {
-        controller.error(err);
-      } finally {
         if (timer !== null) clearTimeout(timer);
+        if (!stalled) controller.error(err);
+        return;
       }
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (stalled) return; // stall() 이 이미 오류로 끝냈다
+      if (r.done) controller.close();
+      else controller.enqueue(r.value);
     },
     cancel(reason) {
+      if (timer !== null) clearTimeout(timer);
       return reader.cancel(reason);
     },
   });
@@ -162,7 +170,7 @@ export interface CameraView {
   playable: boolean;
 }
 
-export type CctvDeps = { fetch: (input: string, init?: RequestInit) => Promise<Response>; idleTimeoutMs?: number };
+export type CctvDeps = { fetch: (input: string, init?: RequestInit) => Promise<Response>; idleTimeoutMs?: number; connectTimeoutMs?: number };
 
 /** 기본 꺼짐 — "true" 가 아니면 모두 꺼짐으로 본다. */
 export function isEnabled(env: Env): boolean {
@@ -320,7 +328,7 @@ export async function proxyStream(
 
   let upstream: Response;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), deps.connectTimeoutMs ?? UPSTREAM_TIMEOUT_MS); // MUTATION:CCTV-CONNECT-TIMEOUT
   try {
     // workerd 는 redirect:'error' 를 구현하지 않고 TypeError 를 던진다(바이너리 문구 확인).
     // 'manual' 로 받고 3xx 는 아래 200/206 검사가 그대로 거부한다. MUTATION:CCTV-REDIRECT
@@ -332,14 +340,13 @@ export async function proxyStream(
   }
 
   // 거부할 때는 중계 연결을 바로 끊는다 — 안 읽을 영상이 온실 업로드 회선을 계속 타지 않게. MUTATION:CCTV-CANCEL
-  const reject = async (code: string, message: string): Promise<never> => {
+  const reject = async (code: string, message: string, status: 502 | 416 = 502): Promise<never> => {
     await upstream.body?.cancel().catch(() => undefined);
-    throw new ApiError(502, code, message);
+    throw new ApiError(status, code, message);
   };
   if (upstream.status === 416) {
     // 구간이 영상 범위를 벗어난 것은 클라이언트 쪽 문제 — 중계 서버 장애(502)로 보고하지 않는다
-    await upstream.body?.cancel().catch(() => undefined);
-    throw new ApiError(416, 'range_not_satisfiable', 'Requested range is outside the stream');
+    return reject('range_not_satisfiable', 'Requested range is outside the stream', 416);
   }
   if (upstream.status !== 200 && upstream.status !== 206) {
     return reject('relay_error', 'CCTV relay returned an unexpected response');
@@ -468,7 +475,8 @@ export function cctvRoutes(deps: CctvDeps) {
   return r;
 }
 
+// 본문(관리 등록)과 같은 규칙으로 검사한다 — "올바른 카메라 이름" 정의가 두 곳으로 갈라지지 않게
+const CAMERA_ID = str({ min: 2, max: 64, pattern: CAMERA_ID_RE });
 function cameraIdParam(v: string): string {
-  if (!CAMERA_ID_RE.test(v)) throw new ValidationError('invalid_format', 'camera_id');
-  return v;
+  return CAMERA_ID(v, 'camera_id'); // MUTATION:CCTV-ID-PARAM
 }
