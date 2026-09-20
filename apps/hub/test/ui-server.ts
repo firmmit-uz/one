@@ -159,7 +159,7 @@ createServer(async (req, res) => {
       // 시험용 값 (실제 계정 정보 아님). 자동 동기화 화면 확인에만 쓰이고 외부 호출은 하지 않는다.
       ...(AUTO_SYNC ? { CF_ACCOUNT_ID: 'acct-test-0001', CF_API_TOKEN: 'test-token_0123456789' } : {}),
       // 시험용 값. 실제 중계 서버가 아니며 화면 시험은 영상을 재생하지 않는다.
-      ...(CCTV_ON ? { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: 'https://relay.example.test' } : {}),
+      ...(CCTV_ON ? { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: 'https://relay.example.test', CCTV_RELAY_AUTH: 'none' } : {}),
     };
     const r = await app.fetch(request, env, { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext);
     const h: Record<string, string> = {};

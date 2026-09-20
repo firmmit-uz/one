@@ -91,6 +91,9 @@ const MUTANTS = [
   ['cctv: 볼 수 있음 판정 끔', 'src/cctv.ts', /const playable =\n[\s\S]*?\/\/ MUTATION:CCTV-PLAYABLE/, 'const playable = true;'],
   ['cctv: 모르는 인증 방식 허용', 'src/cctv.ts', /^.*\/\/ MUTATION:CCTV-AUTH-UNKNOWN\n/m, "  if (scheme === 'none' || !['basic','cf-access'].includes(scheme)) return { ok: true, headers: [] };\n"],
   ['cctv: 인증 값이 없어도 그냥 부름', 'src/cctv.ts', "  const auth = relayAuth(env);\n  if (!auth.ok) return { ok: false, code: 'relay_auth_misconfigured' };", '  const auth = { ok: true, headers: [] };'],
+  ['cctv: 인증 방법이 비어도 익명으로 부름', 'src/cctv.ts', "if (typeof raw !== 'string' || raw.trim() === '') return { ok: false };", "if (typeof raw !== 'string' || raw.trim() === '') return { ok: true, headers: [] };"],
+  ['cctv: 중계 서버로 자동 따라가기 허용(workerd 거부값)', 'src/cctv.ts', "redirect: 'manual'", "redirect: 'follow'"],
+  ['cctv: 중계 서버 요청에서 no-cache 제거', 'src/cctv.ts', "  headers.set('Cache-Control', 'no-cache');\n", ''],
   ['cctv: 중계 서버 응답 형식 확인 끔', 'src/cctv.ts', 'if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {', 'if (false) {'],
   ['cctv: 중계 서버 응답 코드 확인 끔', 'src/cctv.ts', 'if (upstream.status !== 200 && upstream.status !== 206) {', 'if (false) {'],
   [

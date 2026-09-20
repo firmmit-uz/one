@@ -59,7 +59,9 @@ export type RelayAuthResult =
  */
 export function relayAuth(env: Env): RelayAuthResult {
   const raw = env.CCTV_RELAY_AUTH;
-  const scheme = raw === undefined || raw.trim() === '' ? 'none' : raw.trim();
+  // 설정이 비어 있으면 거부한다. 'none' 도 **적어 두어야** 고른 것이다. MUTATION:CCTV-AUTH-BLANK
+  if (typeof raw !== 'string' || raw.trim() === '') return { ok: false };
+  const scheme = raw.trim();
   if (!(RELAY_AUTH_SCHEMES as readonly string[]).includes(scheme)) return { ok: false }; // MUTATION:CCTV-AUTH-UNKNOWN
   if (scheme === 'none') return { ok: true, headers: [] };
   if (scheme === 'basic') {
@@ -242,6 +244,8 @@ export async function proxyStream(
   deps: CctvDeps,
 ): Promise<Response> {
   const headers = new Headers();
+  // 실시간이어야 하므로 중간 캐시를 쓰지 않는다. 브라우저 쪽 ?t= 만으로는 가장자리 캐시를 못 막는다.
+  headers.set('Cache-Control', 'no-cache');
   if (range !== null && RANGE_RE.test(range)) headers.set('Range', range);
   // 접속표는 중계 서버로만 간다. 브라우저·로그·감사기록에는 나오지 않는다.
   for (const [k, v] of target.authHeaders ?? []) headers.set(k, v);
@@ -250,7 +254,9 @@ export async function proxyStream(
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    upstream = await deps.fetch(target.url, { method: 'GET', headers, redirect: 'error', signal: ctl.signal });
+    // workerd 는 redirect:'error' 를 구현하지 않고 TypeError 를 던진다(바이너리 문구 확인).
+    // 'manual' 로 받고 3xx 는 아래 200/206 검사가 그대로 거부한다. MUTATION:CCTV-REDIRECT
+    upstream = await deps.fetch(target.url, { method: 'GET', headers, redirect: 'manual', signal: ctl.signal });
   } catch {
     throw new ApiError(502, 'relay_unreachable', 'CCTV relay did not respond');
   } finally {

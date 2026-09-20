@@ -48,7 +48,8 @@ async function cctvHarness(envOverrides: Partial<Env> = {}, upstream: Upstream =
       return new Response(body, { status, headers });
     },
   });
-  const env = makeEnv(d1, { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: RELAY, ...envOverrides });
+  // 인증 방법은 비워 둘 수 없다(fail-closed). 시험 기본은 'none' 을 **명시**한다.
+  const env = makeEnv(d1, { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: RELAY, CCTV_RELAY_AUTH: 'none', ...envOverrides });
   seedOrg(sqlite);
   const call = async (path: string, init: CallInit = {}) => {
     const method = init.method ?? (init.body !== undefined ? 'POST' : 'GET');
@@ -122,13 +123,28 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
     }
   });
 
-  it('중계 서버에 밝히는 방법: 기본은 none, 모르는 값은 실패', () => {
-    expect(relayAuth(envOf({}))).toEqual({ ok: true, headers: [] });
+  it('중계 서버에 밝히는 방법: 비어 있으면 실패(익명으로 부르지 않는다), 모르는 값도 실패', () => {
+    // 'none' 도 고른 것이어야 한다. 설정을 반만 해 둔 상태로 인증 없는 중계 서버를 부르면 안 된다.
+    expect(relayAuth(envOf({})).ok).toBe(false);
+    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: '' })).ok).toBe(false);
+    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: '  ' })).ok).toBe(false);
     expect(relayAuth(envOf({ CCTV_RELAY_AUTH: 'none' }))).toEqual({ ok: true, headers: [] });
-    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: '  ' }))).toEqual({ ok: true, headers: [] });
+    expect(relayAuth(envOf({ CCTV_RELAY_AUTH: ' none ' }))).toEqual({ ok: true, headers: [] });
     for (const bad of ['bearer', 'BASIC', 'digest', 'cf_access', 'x']) {
       expect(relayAuth(envOf({ CCTV_RELAY_AUTH: bad })).ok).toBe(false);
     }
+  });
+
+  it('중계 서버 요청: 자동 따라가기 없이 no-cache 로 부른다', async () => {
+    // redirect:'error' 는 workerd 가 거부한다(TypeError) → 실제 Worker 에서 재생이 전부 막힌다.
+    // 가장자리 캐시에 걸리면 멈춘 사진이 실시간처럼 보인다.
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await h.call('/api/cctv/cam-1/play', { token: await h.token(ADMIN) });
+    spy.mockRestore();
+    expect(h.calls[0]!.init?.redirect).toBe('manual');
+    expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Cache-Control')).toBe('no-cache');
   });
 
   it('basic: 아이디·비밀번호가 있어야 하고, 없으면 실패(그냥 부르지 않는다)', () => {
@@ -244,7 +260,7 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
     updated_at: '2026-09-01T00:00:00.000Z',
     ...o,
   });
-  const env = envOf({ CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: RELAY });
+  const env = envOf({ CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: RELAY, CCTV_RELAY_AUTH: 'none' });
 
   it('정상이면 중계 서버 주소 + 경로를 합쳐 준다', () => {
     expect(playTarget(env, row())).toEqual({ ok: true, url: `${RELAY}/live/cam1.mp4`, kind: 'mp4', authHeaders: [] });
@@ -252,7 +268,7 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
 
   it('꺼짐·주소 없음·미연결·알 수 없는 방식은 모두 거부', () => {
     expect(playTarget(envOf({ CCTV_RELAY_ORIGIN: RELAY }), row())).toEqual({ ok: false, code: 'cctv_disabled' });
-    expect(playTarget(envOf({ CCTV_ENABLED: 'true' }), row())).toEqual({ ok: false, code: 'relay_not_configured' });
+    expect(playTarget(envOf({ CCTV_ENABLED: 'true', CCTV_RELAY_AUTH: 'none' }), row())).toEqual({ ok: false, code: 'relay_not_configured' });
     expect(playTarget(env, row({ status: 'not_connected', stream_path: null }))).toEqual({ ok: false, code: 'not_connected' });
     expect(playTarget(env, row({ stream_kind: 'hls' }))).toEqual({ ok: false, code: 'unsupported_stream' });
     expect(playTarget(env, row({ stream_kind: 'rtsp' }))).toEqual({ ok: false, code: 'unsupported_stream' });
