@@ -76,6 +76,31 @@
       "problems": []
     },
     {
+      "name": "status-admin-ko-390",
+      "file": "test/screens/status-admin-ko-390.png",
+      "viewport": "390x844",
+      "user": "admin",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "iframes": 0,
+      "adminTabVisible": true,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
       "name": "admin-ko-1440",
       "file": "test/screens/admin-ko-1440.png",
       "viewport": "1440x900",
@@ -438,7 +463,7 @@
     {
       "name": "cctv_play_flow",
       "image": {
-        "src": "/api/cctv/icheon-vfarm/play?t=1789896705217",
+        "src": "/api/cctv/icheon-vfarm/play?t=1789897244179",
         "w": 640,
         "h": 360,
         "origin": "http://127.0.0.1:8801"

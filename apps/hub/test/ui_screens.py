@@ -268,6 +268,8 @@ def main():
             shoot(browser, base, "home-admin-ko-1440", "home", 1440, 900, expect=lambda p, c: has_disabled(p, c) + admin_tab_visible(True)(p, c))
             shoot(browser, base, "home-admin-ko-390", "home", 390, 844)
             shoot(browser, base, "status-admin-ko-1440", "status", 1440, 900)
+            # 좁은 화면에서 열이 많은 표가 접히는지 (B단계 행 펼치기)
+            shoot(browser, base, "status-admin-ko-390", "status", 390, 844)
             shoot(browser, base, "admin-ko-1440", "admin", 1440, 900)
             shoot(browser, base, "admin-ko-390", "admin", 390, 844)
             shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn", expect=admin_tab_visible(False))

@@ -198,6 +198,28 @@ function table(headers, rows, opts = {}) {
       if (headers[i]) td.setAttribute('data-label', headers[i]);
     });
   }
+  // 좁은 화면에서는 핵심 두 열만 두고 나머지는 행마다 펼쳐 본다 (열이 3개 이상일 때만)
+  if (opts.stack && headers.length > 2) {
+    for (const tr of rows) {
+      const first = tr.children[0];
+      if (!first) continue;
+      tr.classList.add('is-collapsed');
+      const toggle = el('button', {
+        type: 'button',
+        class: 'row-expand',
+        'aria-expanded': 'false',
+        'aria-label': t('row_expand'),
+        text: '⌄',
+        onclick: () => {
+          const collapsed = tr.classList.contains('is-collapsed');
+          tr.classList.toggle('is-collapsed', !collapsed);
+          toggle.setAttribute('aria-expanded', String(collapsed));
+          toggle.setAttribute('aria-label', collapsed ? t('row_collapse') : t('row_expand'));
+        },
+      });
+      first.prepend(toggle);
+    }
+  }
   return el(
     'div',
     { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': opts.label || headers.join(', ') },
@@ -208,6 +230,30 @@ function table(headers, rows, opts = {}) {
       el('tbody', {}, rows),
     ),
   );
+}
+
+/**
+ * 좁은 화면에서만 목록 뒷부분을 접는다. 넓은 화면에서는 CSS 가 단추를 숨기고 전부 보여준다.
+ * 접힌 항목은 display:none 이라 보조기술에도 읽히지 않고, 단추로 펼치면 그대로 돌아온다.
+ */
+function collapsible(listEl, keep) {
+  const total = listEl.children.length;
+  if (total <= keep) return [listEl];
+  listEl.classList.add('is-collapsed');
+  const rest = total - keep;
+  const btn = el('button', {
+    type: 'button',
+    class: 'btn btn-secondary btn-sm more-btn',
+    'aria-expanded': 'false',
+    text: t('show_more_n', { n: rest }),
+    onclick: () => {
+      const collapsed = listEl.classList.contains('is-collapsed');
+      listEl.classList.toggle('is-collapsed', !collapsed);
+      btn.setAttribute('aria-expanded', String(collapsed));
+      btn.textContent = collapsed ? t('show_less') : t('show_more_n', { n: rest });
+    },
+  });
+  return [listEl, btn];
 }
 
 // ---------- 화면 틀 ----------
@@ -334,14 +380,17 @@ function breakdownToggle(k) {
 function kpiStatusLine(data) {
   const down = data.kpis.find((k) => k.kpi_id === 'SYS.UPTIME');
   const downText = down && down.measure && down.measure.value !== null ? String(down.measure.value) : '—';
+  // 다운·지연은 글자만으로 묻히지 않게 배지로 낸다 (아이콘 + 글자 + 색 3중)
+  const downN = downText === '—' ? null : Number(downText);
+  const staleN = Number(data.summary.stale) || 0;
   const line = el(
     'a',
     { class: 'status-line', href: '#/status' },
     el('span', { text: t('kpi_as_of', { time: fmtTime(data.as_of) }) }),
-    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
-    el('span', { text: t('kpi_stale_n', { n: data.summary.stale }) }),
-    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
-    el('span', { text: t('kpi_down_n', { n: downText }) }),
+    downN === null
+      ? badge('muted', t('kpi_down_n', { n: downText }), '·')
+      : badge(downN > 0 ? 'state-down' : 'state-up', t('kpi_down_n', { n: downText }), downN > 0 ? '×' : '✓'),
+    badge(staleN > 0 ? 'warn' : 'state-up', t('kpi_stale_n', { n: staleN }), staleN > 0 ? '⏱' : '✓'),
   );
   return line;
 }
@@ -368,9 +417,12 @@ async function kpiSection() {
     put(box,
       kpiStatusLine(data),
       sectionHead(t('kpi_system')),
-      data.kpis.length
-        ? el('div', { class: 'kpi-grid' }, data.kpis.map(kpiCard))
-        : el('p', { class: 'empty', text: t('group_empty') }),
+      ...(data.kpis.length
+        // "준비 중"은 읽을 값이 없으므로 연결된 지표 뒤로 보낸다 (정렬은 안정적이라 나머지 차례는 그대로)
+        ? collapsible(el('div', { class: 'kpi-grid' }, [...data.kpis]
+            .sort((a, b) => (a.display_status === 'unavailable' ? 1 : 0) - (b.display_status === 'unavailable' ? 1 : 0))
+            .map(kpiCard)), 4)
+        : [el('p', { class: 'empty', text: t('group_empty') })]),
     );
   } catch (err) {
     put(box, sectionHead(t('kpi_system')), errorBox(err, () => render()));
@@ -399,7 +451,9 @@ async function viewHome(main) {
       'section',
       { class: 'launcher-group', 'aria-labelledby': `grp-${kind}` },
       el('h2', { id: `grp-${kind}`, text: t(`group_${kind}`) }),
-      items.length === 0 ? el('p', { class: 'empty', text: t('group_empty') }) : el('ul', { class: 'card-grid' }, items.map(appCard)),
+      ...(items.length === 0
+        ? [el('p', { class: 'empty', text: t('group_empty') })]
+        : collapsible(el('ul', { class: 'card-grid' }, items.map(appCard)), 3)),
     );
   });
   const kpis = el('div');
@@ -507,7 +561,7 @@ async function viewStatus(main) {
     ),
     tiles,
     el('p', { class: 'meta', text: detail ? t('status_scope_admin') : t('status_scope_staff') }),
-    rows.length ? table(headers, rows, { label: t('nav_status') }) : el('p', { class: 'empty', text: t('status_items_empty') }),
+    rows.length ? table(headers, rows, { label: t('nav_status'), stack: true }) : el('p', { class: 'empty', text: t('status_items_empty') }),
   );
 }
 

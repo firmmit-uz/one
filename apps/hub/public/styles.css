@@ -237,6 +237,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 
 .footer { max-width: 1280px; width: 100%; margin: 0 auto; padding: 16px 24px 24px; color: var(--text-2); font-size: 13px; border-top: 1px solid var(--line); }
 
+/* 탭 이름 축약 · 목록 접기 · 표 행 펼치기 (좁은 화면 전용) */
+.tab-short { display: none; }
+.more-btn, .row-expand { display: none; }
+.row-expand {
+  width: 28px; height: 28px; margin-right: 8px; padding: 0;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
+  vertical-align: middle;
+}
+.table-stack tr:not(.is-collapsed) .row-expand { transform: rotate(180deg); }
+
 /* ---------- 모바일 ---------- */
 @media (max-width: 720px) {
   .topbar-row, .nav-row { padding: 0 16px; }
@@ -265,6 +276,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   .table-stack td:first-child::before { display: none; }
   code.detail { max-width: none; }
   .footer { padding: 16px; }
+  /* 탭 이름을 줄여 5개가 한 줄에 들어가게 */
+  .tab-long { display: none; }
+  .tab-short { display: inline; }
+  /* 목록은 앞부분만 두고 단추로 펼친다 */
+  .more-btn { display: inline-flex; margin-top: 10px; }
+  .kpi-grid.is-collapsed > :nth-child(n + 5) { display: none; }
+  .card-grid.is-collapsed > li:nth-child(n + 4) { display: none; }
+  /* 표는 핵심 두 열(이름·상태)만 두고 행마다 펼친다 */
+  .row-expand { display: inline-grid; place-items: center; }
+  .table-stack tr.is-collapsed td:nth-child(n + 3) { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -280,6 +301,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 }
 .status-line:hover, .status-line:focus-visible { border-color: var(--brand); }
 .status-line .sep { color: var(--text-2); }
+.status-line .badge { margin-left: 2px; }
+
 .kpi-panel { margin-bottom: 20px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .kpi-card { font-variant-numeric: tabular-nums; }
