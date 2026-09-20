@@ -134,9 +134,8 @@ async function api(path, { method = 'GET', body } = {}) {
 function errorText(err) {
   const code = err instanceof ApiError ? err.code : 'generic';
   const key = `err_${code}`;
-  const dict = DICT[state.lang] || DICT.ko;
-  const msg = dict[key] ?? DICT.ko[key]; // 한국어 전용 문구(CCTV)는 다른 언어에서도 ko 로 보여 준다
-  if (msg !== undefined) return msg;
+  const msg = t(key); // t() 가 ko 로 되돌리고, 없으면 키를 그대로 돌려준다
+  if (msg !== key) return msg;
   if (err instanceof ApiError && err.status >= 500) return t('err_internal_error');
   return t('err_generic');
 }
@@ -730,9 +729,15 @@ async function viewCctv(main) {
         const showFail = () => { stopCctv(); put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') })); };
         // 열람 토큰(15분)은 서버가 준 expires_at 으로 안다 → 지나기 30초 전에 다시 열어(열람 기록 1건 더) 끊김 없이 잇는다.
         // <img>/<video> 의 error 에는 상태 코드가 없으므로, 만료 전의 오류는 잠깐 끊긴 것으로 보고 2번까지 다시 청한다.
+        // 만료 시각은 서버 시계로 온다. 브라우저 시계와 어긋나도 되게, **수명(expires_at − opened_at)** 을 받은 시각에 더해 잰다.
+        const localExpiry = (o) => {
+          const ttl = Date.parse(o.expires_at) - Date.parse(o.opened_at);
+          return Number.isFinite(ttl) && ttl > 0 ? Date.now() + ttl : NaN;
+        };
         let currentPath = opened.play_path;
-        let expiresAt = Date.parse(opened.expires_at);
+        let expiresAt = localExpiry(opened);
         let retries = 0;
+        let reopenedOnFail = false;
         const start = () => {
           put(stage,
             el('div', { class: 'section-head' },
@@ -743,7 +748,8 @@ async function viewCctv(main) {
         };
         function scheduleReopen() {
           if (!Number.isFinite(expiresAt)) return;
-          const wait = Math.max(1000, expiresAt - Date.now() - 30 * 1000);
+          // 만료 30초 전에 다시 연다. 수명이 이상하게 짧아도 1분보다 자주 열지 않는다 (열람 기록이 초 단위로 쌓이지 않게)
+          const wait = Math.max(60 * 1000, expiresAt - Date.now() - 30 * 1000);
           cctvReopenTimer = window.setTimeout(reopen, wait);
         }
         async function reopen() {
@@ -752,16 +758,20 @@ async function viewCctv(main) {
             const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
             if (typeof again.play_path !== 'string') return showFail();
             currentPath = again.play_path;
-            expiresAt = Date.parse(again.expires_at);
+            expiresAt = localExpiry(again);
             retries = 0;
             start();
-          } catch {
-            showFail();
+          } catch (err) {
+            // /open 은 상태 코드가 있다 — 재생 실패로 뭉뚱그리지 않고 원인을 보여 준다
+            stopCctv();
+            put(stage, inlineError(err));
           }
         }
         function onFail() {
           if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) return reopen();
-          if (retries < 2) { retries++; return start(); }
+          if (retries < 2) { retries++; cctvReopenTimer = window.setTimeout(start, 1500 * retries); return; }
+          // 만료 전인데 계속 실패 — 토큰·카메라 상태를 서버에서 새로 확인해 본다 (한 번)
+          if (!reopenedOnFail) { reopenedOnFail = true; return reopen(); }
           showFail();
         }
         start();
@@ -841,21 +851,24 @@ function addCameraForm(reload) {
   const kind = el('select', { required: true },
     el('option', { value: 'snapshot', text: t('cctv_kind_snapshot') }),
     el('option', { value: 'mp4', text: t('cctv_kind_mp4') }));
-  const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' });
+  const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' }); // 비우면 이전 경로 유지
+  const disconnect = el('input', { type: 'checkbox' });
   const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', placeholder: '0' }); // 비우면 이전 값 유지
   const reason = el('input', { type: 'text', maxlength: '500' });
   return formShell(
     t('form_add_camera'),
     [
       field(t('field_camera_id'), id), field(t('field_camera_name'), name), field(t('field_site'), site),
-      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_sort'), sort),
+      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_disconnect'), disconnect), field(t('field_sort'), sort),
       field(t('field_reason'), reason),
     ],
     t('submit_add_camera'),
     async () => {
-      // 경로를 비우면 null → 서버가 미연결로 저장한다 (상태를 따로 보내지 않는다)
+      // 경로: 적으면 그 값, "미연결로 저장" 이면 null, 둘 다 아니면 보내지 않아 이전 경로가 유지된다 (새 등록이면 미연결)
       const p = optionalText(path.value);
-      const body = { camera_id: id.value.trim(), name_ko: name.value.trim(), site: site.value.trim(), stream_kind: kind.value, stream_path: p ? p : null };
+      const body = { camera_id: id.value.trim(), name_ko: name.value.trim(), site: site.value.trim(), stream_kind: kind.value };
+      if (disconnect.checked) body.stream_path = null;
+      else if (p) body.stream_path = p;
       if (sort.value !== '') body.sort = Number(sort.value);
       const r = optionalText(reason.value);
       if (r) body.reason = r;

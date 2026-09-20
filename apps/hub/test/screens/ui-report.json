@@ -463,7 +463,7 @@
     {
       "name": "cctv_play_flow",
       "image": {
-        "src": "/api/cctv/icheon-vfarm/play?s=6c6972da-8fc1-4194-bce2-73d3be9226e7&t=1789906229564",
+        "src": "/api/cctv/icheon-vfarm/play?s=83a8a427-7cb4-44f9-9ee0-75fcd5c4f9a5&t=1789907166511",
         "w": 640,
         "h": 360,
         "origin": "http://127.0.0.1:8801"

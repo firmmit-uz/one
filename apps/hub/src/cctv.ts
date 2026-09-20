@@ -49,42 +49,40 @@ export function isForwardableRange(v: string): boolean {
 /** 본문이 이만큼 멈춰 있으면 연결을 끊는다 — 중계 서버가 머리말만 보내고 얼어붙었을 때 재생기가 영원히 돌지 않게. */
 export const IDLE_TIMEOUT_MS = 30_000;
 
-/** 조각이 idleMs 동안 안 오면 onIdle 을 부른다(부르는 쪽이 연결을 끊는다). 읽는 쪽이 취소하면 위로 그대로 전해진다. */
+/**
+ * 중계 서버에서 조각을 **기다리는 동안** idleMs 가 지나면 onIdle 을 부르고 아래쪽도 오류로 끝낸다.
+ * 위쪽 읽기마다 재는 것이라, 브라우저가 느리거나 멈춰서(역압) 안 읽는 동안은 시간을 재지 않는다 —
+ * 얼어붙은 중계 서버만 잡고, 일시정지한 재생기는 끊지 않는다.
+ */
 export function withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number, onIdle: () => void): ReadableStream<Uint8Array> {
-  let ctrl: TransformStreamDefaultController<Uint8Array> | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const idle = () => {
-    timer = null;
-    onIdle(); // 위쪽 연결을 끊는다
-    // 아래쪽(브라우저)도 바로 오류로 끝낸다 — 위쪽이 끊기는 것을 기다리지 않는다
-    try { ctrl?.error(new Error('CCTV relay stalled')); } catch { /* 이미 닫힘 */ }
-  };
-  const arm = () => {
-    if (timer !== null) clearTimeout(timer);
-    timer = setTimeout(idle, idleMs);
-  };
-  const disarm = () => {
-    if (timer !== null) clearTimeout(timer);
-    timer = null;
-  };
-  return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      start(controller) {
-        ctrl = controller;
-        arm();
-      },
-      transform(chunk, controller) {
-        arm();
-        controller.enqueue(chunk);
-      },
-      flush() {
-        disarm();
-      },
-      cancel() {
-        disarm();
-      },
-    }),
-  );
+  const reader = body.getReader();
+  const STALL = Symbol('stall');
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const stall = new Promise<typeof STALL>((resolve) => {
+        timer = setTimeout(() => resolve(STALL), idleMs);
+      });
+      try {
+        const r = await Promise.race([reader.read(), stall]);
+        if (r === STALL) {
+          onIdle(); // 위쪽 연결을 끊는다
+          reader.cancel().catch(() => undefined);
+          controller.error(new Error('CCTV relay stalled'));
+          return;
+        }
+        if (r.done) controller.close();
+        else controller.enqueue(r.value);
+      } catch (err) {
+        controller.error(err);
+      } finally {
+        if (timer !== null) clearTimeout(timer);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
 }
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;

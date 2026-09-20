@@ -42,6 +42,16 @@ export function isEmail(v: unknown): v is string {
   return typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v);
 }
 
+/** 정수 범위. 문자열·소수·범위 밖은 거부한다 (null ≠ 0 원칙과 같은 결). */
+export function int(opts: { min: number; max: number }): Validator<number> {
+  return (v, field) => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < opts.min || v > opts.max) { // MUTATION:INT-RANGE
+      throw new ValidationError('invalid_value', field);
+    }
+    return v;
+  };
+}
+
 export const bool: Validator<boolean> = (v, field) => {
   if (v !== true && v !== false) throw new ValidationError('invalid_type', field);
   return v;

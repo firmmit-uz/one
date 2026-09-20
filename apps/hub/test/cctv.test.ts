@@ -863,3 +863,22 @@ describe('CCTV 전달 — 구간 순서 · 416 · 압축 · 멈춤', () => {
     expect(outcome).toBe('error');
   });
 });
+
+describe('관리 등록 — 경로를 빼면 이전 경로를 지킨다', () => {
+  it('생략 = 유지, null = 미연결, 새 등록에서 생략 = 미연결', async () => {
+    const h = await cctvHarness();
+    const t = await h.token(ADMIN);
+    const base = { camera_id: 'akis-gh8', name_ko: '8번', site: 'AKIS', stream_kind: 'snapshot' };
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_path: '/api/frame.jpeg?src=akis-gh8' } })).status).toBe(201);
+    const path = () => (h.sqlite.prepare("SELECT stream_path, status FROM cctv_cameras WHERE camera_id = 'akis-gh8'").get() as { stream_path: string | null; status: string });
+    // 이름만 고치는 저장 — 경로·연결 상태 유지
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, name_ko: '8번 (수정)' } })).status).toBe(200);
+    expect(path()).toEqual({ stream_path: '/api/frame.jpeg?src=akis-gh8', status: 'active' });
+    // 명시적 null — 미연결
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, stream_path: null } })).status).toBe(200);
+    expect(path()).toEqual({ stream_path: null, status: 'not_connected' });
+    // 새 등록에서 생략 — 미연결
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, camera_id: 'akis-gh7' } })).status).toBe(201);
+    expect((h.sqlite.prepare("SELECT status FROM cctv_cameras WHERE camera_id = 'akis-gh7'").get() as { status: string }).status).toBe('not_connected');
+  });
+});

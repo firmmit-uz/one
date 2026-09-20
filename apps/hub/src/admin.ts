@@ -18,7 +18,7 @@ import { requireHubAdmin } from './guard';
 import { ApiError, errorIncludes } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
 import { isEnabled as isTokenRefreshEnabled, tokenStatuses } from './tokens/refresh';
-import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
+import { arrayOf, email, futureIsoUtc, int, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
 
 const GROUP_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const SCOPE_RE = /^[A-Za-z0-9_.:*-]{1,64}$/;
@@ -28,13 +28,6 @@ const ID_RE = /^[1-9][0-9]{0,15}$/;
 const reason = { v: str({ max: 500 }), optional: true } as const;
 
 // 정렬 순서: 0 이상 9999 이하의 정수만 (실수·NaN·범위 밖 거부)
-function sortNumber(v: unknown, field: string): number {
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 9999) {
-    throw new ValidationError('invalid_value', field);
-  }
-  return v;
-}
-
 export function adminRoutes() {
   const r = new Hono<HubEnv>();
 
@@ -368,26 +361,30 @@ export function adminRoutes() {
       name_ko: { v: str({ max: 100 }) },
       site: { v: str({ max: 64 }) },
       stream_kind: { v: oneOf(STREAM_KINDS) },
-      // 미연결로 두려면 null. 연결하려면 '/' 로 시작하는 경로.
-      stream_path: { v: streamPathValidator, nullable: true },
-      sort: { v: sortNumber, optional: true },
+      // 연결하려면 '/' 로 시작하는 경로. 미연결로 두려면 null. **빼면 이전 경로 유지** (새 등록에서 빼면 미연결).
+      // 목록은 경로를 돌려주지 않으므로, 이름·순서만 고치는 저장이 경로를 지우지 않게 하려면 이 규칙이 필요하다.
+      stream_path: { v: streamPathValidator, nullable: true, optional: true },
+      sort: { v: int({ min: 0, max: 9999 }), optional: true },
       reason,
     })(await readJsonBody(c.req.raw), '');
 
-    // 경로가 없으면 미연결, 있으면 연결 — 상태를 따로 받지 않아 어긋날 수 없다
-    const status = body.stream_path === null ? 'not_connected' : 'active';
     const db = c.env.DB;
     const now = c.get('now').toISOString();
     const actor = c.get('principal').email;
     // 이전 상태는 batch 를 준비할 때마다 읽는다 — runAudited 가 재시도하면 다시 읽으므로 감사기록이 묵은 값을 담지 않는다
     // 닫힌 함수 안의 대입은 TS 흐름 분석이 따라오지 못하므로 객체 속성으로 들고 있는다
-    const seen: { before: Awaited<ReturnType<typeof getCamera>>; sort: number } = { before: null, sort: 0 };
+    const seen: { before: Awaited<ReturnType<typeof getCamera>>; sort: number; stream_path: string | null; status: 'active' | 'not_connected' } = { before: null, sort: 0, stream_path: null, status: 'not_connected' };
 
     await runAudited(db, async () => {
       const before = await getCamera(db, body.camera_id);
       const sort = body.sort ?? before?.sort ?? 0;
+      // 경로: 보낸 값 > 이전 값 > 없음. 상태는 경로에서만 정한다 — 따로 받지 않아 어긋날 수 없다
+      const stream_path: string | null = body.stream_path === undefined ? (before?.stream_path ?? null) : body.stream_path;
+      const status = stream_path === null ? 'not_connected' : 'active';
       seen.before = before;
       seen.sort = sort;
+      seen.stream_path = stream_path;
+      seen.status = status;
       return {
       stmts: [
         db
@@ -399,7 +396,7 @@ export function adminRoutes() {
                stream_path = excluded.stream_path, status = excluded.status, sort = excluded.sort,
                updated_at = excluded.updated_at`,
           )
-          .bind(body.camera_id, body.name_ko, body.site, body.stream_kind, body.stream_path, status, sort, before?.created_at ?? now, now),
+          .bind(body.camera_id, body.name_ko, body.site, body.stream_kind, stream_path, status, sort, before?.created_at ?? now, now),
       ],
       entry: {
         ts: now,
@@ -412,7 +409,7 @@ export function adminRoutes() {
           site: body.site,
           stream_kind: body.stream_kind,
           status,
-          path_changed: (before?.stream_path ?? null) !== body.stream_path,
+          path_changed: (before?.stream_path ?? null) !== stream_path,
           from_status: before?.status ?? null,
           reason: body.reason ?? null,
         },
@@ -427,8 +424,8 @@ export function adminRoutes() {
       name_ko: body.name_ko,
       site: body.site,
       stream_kind: body.stream_kind,
-      stream_path: body.stream_path,
-      status,
+      stream_path: seen.stream_path,
+      status: seen.status,
       sort: seen.sort,
       created_at: seen.before?.created_at ?? now,
       updated_at: now,
