@@ -103,6 +103,8 @@ const MUTANTS = [
   ['cctv: HEAD 로 영상 연결 열기 허용', 'src/cctv.ts', "if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');", ''],
   ['cctv: 거부할 때 중계 연결을 끊지 않음', 'src/cctv.ts', "    await upstream.body?.cancel().catch(() => undefined);\n", ''],
   ['cctv: 가장자리 캐시 허용', 'src/cctv.ts', "cf: { cacheEverything: false }", "cf: { cacheEverything: true }"],
+  ['cctv: 카메라 이름 규칙 검사 끔', 'src/cctv.ts', "if (!CAMERA_ID_RE.test(v)) throw new ValidationError('invalid_format', 'camera_id');", ''],
+  ['admin: 카메라 정렬값 검사 끔', 'src/admin.ts', "if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 9999) {", 'if (false) {'],
   ['cctv: 중계 서버 응답 형식 확인 끔', 'src/cctv.ts', 'if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {', 'if (false) {'],
   ['cctv: 중계 서버 응답 코드 확인 끔', 'src/cctv.ts', 'if (upstream.status !== 200 && upstream.status !== 206) {', 'if (false) {'],
   [

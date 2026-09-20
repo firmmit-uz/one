@@ -135,7 +135,8 @@ function errorText(err) {
   const code = err instanceof ApiError ? err.code : 'generic';
   const key = `err_${code}`;
   const dict = DICT[state.lang] || DICT.ko;
-  if (key in dict) return dict[key];
+  const msg = dict[key] ?? DICT.ko[key]; // 한국어 전용 문구(CCTV)는 다른 언어에서도 ko 로 보여 준다
+  if (msg !== undefined) return msg;
   if (err instanceof ApiError && err.status >= 500) return t('err_internal_error');
   return t('err_generic');
 }
@@ -199,9 +200,10 @@ function table(headers, rows, opts = {}) {
     });
   }
   // 좁은 화면에서는 핵심 두 열만 두고 나머지는 행마다 펼쳐 본다 (열이 3개 이상일 때만)
-  if (opts.stack && headers.length > 2) {
-    // 접혀도 보이는 열. 첫 열(이름)은 항상 남긴다 — 펼치기 단추가 거기 있다.
-    const keep = new Set([0, ...(Array.isArray(opts.keep) ? opts.keep : [1])]);
+  if (opts.stack && headers.length > 2 && Array.isArray(opts.keep)) {
+    // 접혀도 보이는 열은 표마다 keep 으로 정한다. keep 이 없으면 아무 열도 숨기지 않는다.
+    // 첫 열(이름)은 항상 남긴다 — 펼치기 단추가 거기 있다.
+    const keep = new Set([0, ...opts.keep]);
     for (const tr of rows) {
       const first = tr.children[0];
       if (!first) continue;
@@ -285,6 +287,7 @@ function currentRoute() {
 }
 
 async function render(focus = false) {
+  stopCctv(); // 어느 화면으로 가든 남아 있던 영상 연결을 먼저 끊는다
   state.route = currentRoute();
   applyStaticText();
   const main = document.getElementById('main');
@@ -383,18 +386,21 @@ function breakdownToggle(k) {
 /** 홈 상단 고정 줄: 데이터 기준 · 지연 KPI 수 · 다운 수 */
 function kpiStatusLine(data) {
   const down = data.kpis.find((k) => k.kpi_id === 'SYS.UPTIME');
-  const downText = down && down.measure && down.measure.value !== null ? String(down.measure.value) : '—';
+  // 숫자가 아니면(null·빈값·문자) 0 으로 바꾸지 않고 회색 "—" 로 둔다 — null ≠ 0
+  const finiteOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const downN = finiteOrNull(down && down.measure ? down.measure.value : null);
+  const staleN = finiteOrNull(data.summary ? data.summary.stale : null);
   // 다운·지연은 글자만으로 묻히지 않게 배지로 낸다 (아이콘 + 글자 + 색 3중)
-  const downN = downText === '—' ? null : Number(downText);
-  const staleN = Number(data.summary.stale) || 0;
+  const countBadge = (n, key, badKind, badIcon) =>
+    n === null
+      ? badge('muted', t(key, { n: '—' }), '·')
+      : badge(n > 0 ? badKind : 'state-up', t(key, { n: String(n) }), n > 0 ? badIcon : '✓');
   const line = el(
     'a',
     { class: 'status-line', href: '#/status' },
     el('span', { text: t('kpi_as_of', { time: fmtTime(data.as_of) }) }),
-    downN === null
-      ? badge('muted', t('kpi_down_n', { n: downText }), '·')
-      : badge(downN > 0 ? 'state-down' : 'state-up', t('kpi_down_n', { n: downText }), downN > 0 ? '×' : '✓'),
-    badge(staleN > 0 ? 'warn' : 'state-up', t('kpi_stale_n', { n: staleN }), staleN > 0 ? '⏱' : '✓'),
+    countBadge(downN, 'kpi_down_n', 'state-down', '×'),
+    countBadge(staleN, 'kpi_stale_n', 'warn', '⏱'),
   );
   return line;
 }
@@ -565,7 +571,7 @@ async function viewStatus(main) {
     ),
     tiles,
     el('p', { class: 'meta', text: detail ? t('status_scope_admin') : t('status_scope_staff') }),
-    rows.length ? table(headers, rows, { label: t('nav_status'), stack: true }) : el('p', { class: 'empty', text: t('status_items_empty') }),
+    rows.length ? table(headers, rows, { label: t('nav_status'), stack: true, keep: [1] }) : el('p', { class: 'empty', text: t('status_items_empty') }),
   );
 }
 
@@ -661,6 +667,9 @@ function cctvPlayer(cam, playPath, onError) {
   const video = el('video', { class: 'cctv-media', src, controls: true, autoplay: true, muted: true, playsinline: true });
   video.muted = true;
   video.addEventListener('error', failed);
+  // 떼어내는 것만으로는 진행형 스트림이 안 끊긴다 — 정지할 때 매체 자원을 실제로 놓는다
+  const stopBase = stop;
+  cctvStop = () => { stopBase(); video.pause(); video.removeAttribute('src'); video.load(); };
   return video;
 }
 
@@ -709,25 +718,37 @@ async function viewCctv(main) {
           return;
         }
         open.disabled = false;
+        if (typeof opened.play_path !== 'string') {
+          // 토큰 없는 경로는 서버가 반드시 거부한다 → 재생 실패로 위장하지 않고 응답 형식 오류로 알린다
+          put(stage, inlineError(new ApiError(200, 'invalid_response')));
+          return;
+        }
         const showFail = () => put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') }));
-        // 열람 토큰은 15분이면 지난다. 재생이 끊기면 **한 번** 다시 열어(열람 기록 1건 더) 이어 본다. 또 끊기면 안내.
+        // <img>/<video> 의 error 에는 상태 코드가 없다. 잠깐 끊긴 것인지 열람 토큰(15분)이 지난 것인지 구분할 수 없으므로
+        // 같은 경로로 2번 다시 청해 보고, 그래도 안 되면 **한 번** 다시 연다(열람 기록 1건 더). 또 끊기면 안내.
+        let currentPath = opened.play_path;
+        let retries = 0;
         let reopened = false;
-        const start = (playPath) => put(stage,
+        const start = () => put(stage,
           el('div', { class: 'section-head' },
             el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
             el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
-          cctvPlayer(cam, playPath, onFail));
+          cctvPlayer(cam, currentPath, onFail));
         async function onFail() {
+          if (retries < 2) { retries++; return start(); }
           if (reopened) return showFail();
           reopened = true;
+          retries = 0;
           try {
             const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
-            start(typeof again.play_path === 'string' ? again.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`);
+            if (typeof again.play_path !== 'string') return showFail();
+            currentPath = again.play_path;
+            start();
           } catch {
             showFail();
           }
         }
-        start(typeof opened.play_path === 'string' ? opened.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`);
+        start();
         stage.scrollIntoView({ block: 'nearest' });
       },
     });
@@ -805,7 +826,7 @@ function addCameraForm(reload) {
     el('option', { value: 'snapshot', text: t('cctv_kind_snapshot') }),
     el('option', { value: 'mp4', text: t('cctv_kind_mp4') }));
   const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' });
-  const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', value: '0' });
+  const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', placeholder: '0' }); // 비우면 이전 값 유지
   const reason = el('input', { type: 'text', maxlength: '500' });
   return formShell(
     t('form_add_camera'),

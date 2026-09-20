@@ -217,6 +217,13 @@ export function toView(row: CameraRow, ready: boolean): CameraView {
   return { camera_id: row.camera_id, name_ko: row.name_ko, site: row.site, stream_kind: kind, status, playable };
 }
 
+/** 목록 응답의 공통 부분. `/api/cctv` 와 `/api/admin/cctv` 가 같은 것을 쓴다 — 두 화면이 `playable` 에서 어긋나지 않게. */
+export async function cameraList(env: Env, db: D1Database): Promise<{ enabled: boolean; relay_configured: boolean; rows: CameraRow[]; views: CameraView[] }> {
+  const ready = relayReady(env);
+  const rows = await listCameras(db);
+  return { enabled: isEnabled(env), relay_configured: ready, rows, views: rows.map((row) => toView(row, ready)) };
+}
+
 export type PlayCheck =
   | { ok: true; url: string; kind: StreamKind; authHeaders: [string, string][] }
   | { ok: false; code: 'cctv_disabled' | 'relay_not_configured' | 'relay_auth_misconfigured' | 'not_connected' | 'unsupported_stream' };
@@ -316,13 +323,8 @@ export function cctvRoutes(deps: CctvDeps) {
 
   // 목록: 경로·중계 서버 주소는 내보내지 않는다
   r.get('/', async (c) => {
-    const ready = relayReady(c.env);
-    const rows = await listCameras(c.env.DB);
-    return c.json({
-      enabled: isEnabled(c.env),
-      relay_configured: ready,
-      cameras: rows.map((row) => toView(row, ready)),
-    });
+    const l = await cameraList(c.env, c.env.DB);
+    return c.json({ enabled: l.enabled, relay_configured: l.relay_configured, cameras: l.views });
   });
 
   // 열람 시작: 감사기록 1건 + 열람 토큰을 **한 batch** 로. 화면은 돌려받은 play_path 로만 재생을 건다.
@@ -372,17 +374,20 @@ export function cctvRoutes(deps: CctvDeps) {
     // Hono 는 HEAD 를 GET 처리기로 보내고 본문을 버린다 → 아무도 읽지 않을 영상 연결이 열린다. GET 만 받는다.
     if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');
     const id = cameraIdParam(c.req.param('camera_id'));
-    const row = await getCamera(c.env.DB, id);
+    const token = c.req.query('s') ?? '';
+    // 카메라 행과 열람 토큰을 한 번의 왕복으로 읽는다 — 사진 방식은 2초마다 오는 요청이다
+    const db = c.env.DB;
+    const [camRes, sessRes] = await db.batch([
+      db.prepare('SELECT camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?').bind(id),
+      db.prepare('SELECT camera_id, actor_email, expires_at FROM cctv_view_sessions WHERE token = ?').bind(token),
+    ]);
+    const row = (camRes?.results?.[0] as CameraRow | undefined) ?? null;
     if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
     const target = playTarget(c.env, row);
     if (!target.ok) throw new ApiError(FAIL_STATUS, target.code, FAIL_MESSAGE[target.code]);
 
     // 열람 토큰: /open 이 남긴 것이어야 하고, 같은 카메라·같은 사람·만료 전이어야 한다.
-    const token = c.req.query('s') ?? '';
-    const sess = await c.env.DB
-      .prepare('SELECT camera_id, actor_email, expires_at FROM cctv_view_sessions WHERE token = ?')
-      .bind(token)
-      .first<ViewSessionRow>();
+    const sess = (sessRes?.results?.[0] as ViewSessionRow | undefined) ?? null;
     const nowIso = c.get('now').toISOString();
     const actor = c.get('principal').email;
     if (sess === null || sess.camera_id !== id || sess.actor_email !== actor || sess.expires_at <= nowIso) { // MUTATION:CCTV-VIEW-SESSION

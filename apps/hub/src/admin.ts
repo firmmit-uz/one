@@ -13,7 +13,7 @@ import {
   snapshotDiff,
   snapshotReplaceStmts,
 } from './groupsync';
-import { CAMERA_ID_RE, getCamera, listCameras, relayReady, isEnabled as isCctvEnabled, STREAM_KINDS, streamPathValidator, toView } from './cctv';
+import { CAMERA_ID_RE, cameraList, getCamera, relayReady, STREAM_KINDS, streamPathValidator, toView } from './cctv';
 import { requireHubAdmin } from './guard';
 import { ApiError, errorIncludes } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
@@ -353,12 +353,12 @@ export function adminRoutes() {
   // R3 CCTV 카메라 등록 (허브 자체 관리 입력 — 하위 앱·카메라에 쓰지 않는다).
   // 중계 서버 **안에서의 경로만** 받는다. 서버 주소·카메라 계정은 설정값·중계 서버 쪽에 있다.
   r.get('/cctv', async (c) => {
-    const ready = relayReady(c.env);
-    const rows = await listCameras(c.env.DB);
+    // 뷰어(/api/cctv)와 같은 판정·같은 모양. 관리 화면은 정렬·수정 시각만 더 본다.
+    const l = await cameraList(c.env, c.env.DB);
     return c.json({
-      enabled: isCctvEnabled(c.env),
-      relay_configured: ready,
-      cameras: rows.map((row) => ({ ...toView(row, ready), sort: row.sort, updated_at: row.updated_at })),
+      enabled: l.enabled,
+      relay_configured: l.relay_configured,
+      cameras: l.views.map((v, i) => ({ ...v, sort: l.rows[i]!.sort, updated_at: l.rows[i]!.updated_at })),
     });
   });
 

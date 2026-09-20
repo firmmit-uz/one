@@ -79,8 +79,11 @@ async function playPath(h: { call: (p: string, i?: CallInit) => Promise<Response
   const cached = m.get(key);
   if (cached) return cached;
   const res = await h.call(`/api/cctv/${id}/open`, { token: await h.token(who), body: {} });
+  // /open 이 거부(꺼짐·설정 오류 등)하면 토큰 없는 경로로 /play 의 자체 판정을 그대로 시험한다
+  if (!res.ok) return `/api/cctv/${id}/play`;
   const body = (await json(res)) as { play_path?: unknown };
-  const path = typeof body.play_path === 'string' ? body.play_path : `/api/cctv/${id}/play`;
+  if (typeof body.play_path !== 'string') throw new Error(`/open 이 성공(${res.status})했는데 play_path 가 없다`);
+  const path = body.play_path;
   m.set(key, path);
   return path;
 }
@@ -329,10 +332,14 @@ describe('CCTV API 권한', () => {
   it('카메라 이름이 규칙에 안 맞으면 400 (경로 조작 차단)', async () => {
     const h = await cctvHarness();
     const t = await h.token(ADMIN);
-    for (const bad of ['Cam-1', 'cam_1', 'c', '..', 'cam%2F1']) {
+    for (const bad of ['Cam-1', 'cam_1', 'c', 'cam%2F1']) {
       const res = await h.call(`/api/cctv/${bad}/play`, { token: t });
-      expect([400, 404]).toContain(res.status);
+      expect(res.status).toBe(400); // 규칙 위반은 400 — 검사를 지우면 404 가 되어 여기서 잡힌다
     }
+    // '..' 은 URL 정규화로 경로 자체가 바뀌어 처리기에 닿지 않는다(404). 어느 쪽이든 중계 서버는 부르지 않는다.
+    expect((await h.call('/api/cctv/../play', { token: t })).status).toBe(404);
+    // 규칙에 맞지만 없는 카메라만 404
+    expect((await h.call('/api/cctv/no-such-cam/play', { token: t })).status).toBe(404);
     expect(h.calls.length).toBe(0);
   });
 });
@@ -762,5 +769,22 @@ describe('CCTV 전달 — 거부할 때 중계 연결을 끊는다', () => {
       expect(res.status).toBe(502);
       expect(cancelled).toBe(true);
     }
+  });
+});
+
+describe('관리 등록 — sort 검사', () => {
+  it('정수 0~9999 만 받고, 빼면 이전 값을 지킨다', async () => {
+    const h = await cctvHarness();
+    const t = await h.token(ADMIN);
+    const base = { camera_id: 'akis-gh9', name_ko: '9번', site: 'AKIS', stream_kind: 'snapshot', stream_path: '/api/frame.jpeg?src=akis-gh9' };
+    expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, sort: 20 } })).status).toBe(201);
+    for (const bad of [-1, 1.5, 10000, '3', null]) {
+      expect((await h.call('/api/admin/cctv', { token: t, body: { ...base, sort: bad } })).status).toBe(400);
+    }
+    // sort 를 빼고 다시 저장하면 20 이 유지된다
+    const res = await h.call('/api/admin/cctv', { token: t, body: { ...base, name_ko: '9번 (수정)' } });
+    expect(res.status).toBe(200);
+    const row = h.sqlite.prepare("SELECT sort FROM cctv_cameras WHERE camera_id = 'akis-gh9'").get() as { sort: number };
+    expect(row.sort).toBe(20);
   });
 });
