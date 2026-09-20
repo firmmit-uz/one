@@ -380,11 +380,14 @@ export function adminRoutes() {
     const now = c.get('now').toISOString();
     const actor = c.get('principal').email;
     // 이전 상태는 batch 를 준비할 때마다 읽는다 — runAudited 가 재시도하면 다시 읽으므로 감사기록이 묵은 값을 담지 않는다
-    let before: Awaited<ReturnType<typeof getCamera>> = null;
+    // 닫힌 함수 안의 대입은 TS 흐름 분석이 따라오지 못하므로 객체 속성으로 들고 있는다
+    const seen: { before: Awaited<ReturnType<typeof getCamera>>; sort: number } = { before: null, sort: 0 };
 
     await runAudited(db, async () => {
-      before = await getCamera(db, body.camera_id);
+      const before = await getCamera(db, body.camera_id);
       const sort = body.sort ?? before?.sort ?? 0;
+      seen.before = before;
+      seen.sort = sort;
       return {
       stmts: [
         db
@@ -418,10 +421,19 @@ export function adminRoutes() {
       };
     });
 
-    const row = await getCamera(db, body.camera_id);
-    if (row === null) throw new ApiError(500, 'internal_error', 'Internal error');
-    const ready = relayReady(c.env);
-    return c.json({ camera: toView(row, ready) }, before === null ? 201 : 200);
+    // 응답은 방금 저장한 값으로 만든다 — 다시 읽으면 왕복이 하나 늘고, 그 사이 다른 저장이 끼면 남의 결과를 돌려준다
+    const saved = {
+      camera_id: body.camera_id,
+      name_ko: body.name_ko,
+      site: body.site,
+      stream_kind: body.stream_kind,
+      stream_path: body.stream_path,
+      status,
+      sort: seen.sort,
+      created_at: seen.before?.created_at ?? now,
+      updated_at: now,
+    };
+    return c.json({ camera: toView(saved, relayReady(c.env)) }, seen.before === null ? 201 : 200);
   });
 
   r.get('/audit', async (c) => {

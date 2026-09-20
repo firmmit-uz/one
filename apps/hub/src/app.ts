@@ -28,6 +28,8 @@ export interface AppDeps {
   now?: () => Date;
   /** CCTV 중계 서버 호출 (시험에서는 가짜 서버를 넣는다) */
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** CCTV 전달 중 몸통이 이만큼 멈추면 끊는다 (시험에서만 줄인다) */
+  cctvIdleTimeoutMs?: number;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
@@ -181,7 +183,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.route('/api/kpi', kpiRoutes());
-  app.route('/api/cctv', cctvRoutes({ fetch: doFetch }));
+  app.route('/api/cctv', cctvRoutes({ fetch: doFetch, ...(deps.cctvIdleTimeoutMs !== undefined ? { idleTimeoutMs: deps.cctvIdleTimeoutMs } : {}) }));
   app.route('/api/admin', adminRoutes());
 
   app.notFound((c) => jsonError(c, 404, 'not_found', 'Not found'));

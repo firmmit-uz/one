@@ -60,6 +60,8 @@ export const DICT = {
     err_relay_unreachable: '중계 서버가 응답하지 않습니다. 온실의 중계 PC 와 인터넷을 확인하세요.',
     err_relay_error: '중계 서버가 예상 밖의 응답을 보냈습니다.',
     err_relay_bad_content_type: '중계 서버가 영상이 아닌 형식을 보냈습니다.',
+    err_relay_bad_encoding: '중계 서버가 압축된 응답을 보냈습니다. 중계 서버 설정에서 압축을 끄세요.',
+    err_range_not_satisfiable: '요청한 구간이 영상 범위를 벗어났습니다.',
     err_view_not_opened: '열람 세션이 없거나 만료되었습니다. 영상 보기를 다시 누르세요.',
     err_method_not_allowed: '허용되지 않는 요청 방식입니다.',
     cctv_snapshot_alt: 'CCTV 사진',

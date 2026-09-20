@@ -624,8 +624,13 @@ const CCTV_KIND_KEY = { mp4: 'cctv_kind_mp4', snapshot: 'cctv_kind_snapshot' };
 const SNAPSHOT_MS = 2000;
 // 한 번에 재생기 하나. 현재 재생기의 정지 함수만 들고 있다 — 떼어낸 옛 재생기의 이벤트가 새 재생기를 건드리지 못하게.
 let cctvStop = null;
+let cctvReopenTimer = null;
 
 function stopCctv() {
+  if (cctvReopenTimer !== null) {
+    window.clearTimeout(cctvReopenTimer);
+    cctvReopenTimer = null;
+  }
   if (cctvStop !== null) {
     const stop = cctvStop;
     cctvStop = null;
@@ -643,11 +648,15 @@ function cctvStateBadge(cam) {
 function cctvPlayer(cam, playPath, onError) {
   stopCctv();
   // 재생기마다 자기 타이머·자기 생사 표시를 가진다. 떼어낸 뒤 늦게 도착한 load/error 는 무시된다.
+  // 정지 함수는 **하나** — 어느 경로로 멈추든 타이머와 매체 자원을 같이 놓는다.
   let live = true;
   let timer = null;
+  let media = null;
   const stop = () => {
     live = false;
     if (timer !== null) { window.clearTimeout(timer); timer = null; }
+    if (media && media.tagName === 'VIDEO') { media.pause(); media.removeAttribute('src'); media.load(); }
+    media = null;
   };
   cctvStop = stop;
   const src = playPath;
@@ -664,12 +673,11 @@ function cctvPlayer(cam, playPath, onError) {
     img.addEventListener('error', failed);
     return img;
   }
+  // 떼어내는 것만으로는 진행형 스트림이 안 끊긴다 — stop() 이 매체 자원을 실제로 놓는다
   const video = el('video', { class: 'cctv-media', src, controls: true, autoplay: true, muted: true, playsinline: true });
   video.muted = true;
   video.addEventListener('error', failed);
-  // 떼어내는 것만으로는 진행형 스트림이 안 끊긴다 — 정지할 때 매체 자원을 실제로 놓는다
-  const stopBase = stop;
-  cctvStop = () => { stopBase(); video.pause(); video.removeAttribute('src'); video.load(); };
+  media = video;
   return video;
 }
 
@@ -688,16 +696,10 @@ async function viewCctv(main) {
     return;
   }
   const stage = el('div', { class: 'cctv-stage' });
-  const notice =
-    data.enabled !== true
-      ? el('div', { class: 'alert alert-warn', role: 'status' },
-          el('span', { class: 'alert-icon', 'aria-hidden': 'true', text: '!' }),
-          el('div', { class: 'alert-body' }, el('p', { text: t('cctv_off') })))
-      : data.relay_configured !== true
-        ? el('div', { class: 'alert alert-warn', role: 'status' },
-            el('span', { class: 'alert-icon', 'aria-hidden': 'true', text: '!' }),
-            el('div', { class: 'alert-body' }, el('p', { text: t('cctv_relay_missing') })))
-        : null;
+  const warnAlert = (key) => el('div', { class: 'alert alert-warn', role: 'status' },
+    el('span', { class: 'alert-icon', 'aria-hidden': 'true', text: '!' }),
+    el('div', { class: 'alert-body' }, el('p', { text: t(key) })));
+  const notice = data.enabled !== true ? warnAlert('cctv_off') : data.relay_configured !== true ? warnAlert('cctv_relay_missing') : null;
 
   const rows = cams.map((cam) => {
     const kindKey = CCTV_KIND_KEY[cam.stream_kind] || 'cctv_kind_unknown';
@@ -714,39 +716,53 @@ async function viewCctv(main) {
           opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
         } catch (err) {
           open.disabled = false;
+          stopCctv(); // 보고 있던 다른 카메라가 있으면 먼저 끊는다 — 무대만 갈아엎으면 스트림이 살아남는다
           put(stage, inlineError(err));
           return;
         }
         open.disabled = false;
         if (typeof opened.play_path !== 'string') {
           // 토큰 없는 경로는 서버가 반드시 거부한다 → 재생 실패로 위장하지 않고 응답 형식 오류로 알린다
+          stopCctv();
           put(stage, inlineError(new ApiError(200, 'invalid_response')));
           return;
         }
-        const showFail = () => put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') }));
-        // <img>/<video> 의 error 에는 상태 코드가 없다. 잠깐 끊긴 것인지 열람 토큰(15분)이 지난 것인지 구분할 수 없으므로
-        // 같은 경로로 2번 다시 청해 보고, 그래도 안 되면 **한 번** 다시 연다(열람 기록 1건 더). 또 끊기면 안내.
+        const showFail = () => { stopCctv(); put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') })); };
+        // 열람 토큰(15분)은 서버가 준 expires_at 으로 안다 → 지나기 30초 전에 다시 열어(열람 기록 1건 더) 끊김 없이 잇는다.
+        // <img>/<video> 의 error 에는 상태 코드가 없으므로, 만료 전의 오류는 잠깐 끊긴 것으로 보고 2번까지 다시 청한다.
         let currentPath = opened.play_path;
+        let expiresAt = Date.parse(opened.expires_at);
         let retries = 0;
-        let reopened = false;
-        const start = () => put(stage,
-          el('div', { class: 'section-head' },
-            el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
-            el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
-          cctvPlayer(cam, currentPath, onFail));
-        async function onFail() {
-          if (retries < 2) { retries++; return start(); }
-          if (reopened) return showFail();
-          reopened = true;
-          retries = 0;
+        const start = () => {
+          put(stage,
+            el('div', { class: 'section-head' },
+              el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
+              el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
+            cctvPlayer(cam, currentPath, onFail));
+          scheduleReopen();
+        };
+        function scheduleReopen() {
+          if (!Number.isFinite(expiresAt)) return;
+          const wait = Math.max(1000, expiresAt - Date.now() - 30 * 1000);
+          cctvReopenTimer = window.setTimeout(reopen, wait);
+        }
+        async function reopen() {
+          if (!stage.isConnected) return stopCctv();
           try {
             const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
             if (typeof again.play_path !== 'string') return showFail();
             currentPath = again.play_path;
+            expiresAt = Date.parse(again.expires_at);
+            retries = 0;
             start();
           } catch {
             showFail();
           }
+        }
+        function onFail() {
+          if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) return reopen();
+          if (retries < 2) { retries++; return start(); }
+          showFail();
         }
         start();
         stage.scrollIntoView({ block: 'nearest' });

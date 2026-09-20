@@ -15,10 +15,11 @@ INSERT INTO sync_state (key, last_success_at)
 VALUES ('access_groups', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ON CONFLICT(key) DO UPDATE SET last_success_at = excluded.last_success_at;
 
--- R3 CCTV 화면 확인용 (로컬 전용). 실제 카메라가 아니며 중계 서버도 없다.
--- 켜려면 wrangler.jsonc env.development 에 CCTV_ENABLED / CCTV_RELAY_ORIGIN 을 넣는다.
+-- R3 CCTV 화면 확인용 (로컬 전용). **전부 가짜**이고 중계 서버도 없다.
+-- 확인 안 된 경로를 추정해 넣지 않는다 → 모두 미연결(경로 NULL). 화면에서 "미연결" 로만 보인다.
+-- 실제 재생까지 보려면 wrangler dev 대신 `CCTV_ON=1 npx tsx test/ui-server.ts` (가짜 중계 서버 포함) 를 쓴다.
+-- 켜려면 wrangler.jsonc env.development 에 CCTV_ENABLED / CCTV_RELAY_ORIGIN / CCTV_RELAY_AUTH 를 넣는다 (env 변수는 상속되지 않는다).
 INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at)
 VALUES
- ('cheonan-gate', '천안 정문',   '천안', 'mp4',      '/live/cheonan-gate.mp4', 'active',        10, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now')),
- ('icheon-vfarm', '이천 재배동', '이천', 'snapshot', '/snapshot/icheon.jpg',   'active',        20, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now')),
- ('nonsan-apc',   '논산 APC',    '논산', 'mp4',      NULL,                      'not_connected', 30, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+ ('test-cam-1', '시험 카메라 1', 'example', 'mp4',      NULL, 'not_connected', 10, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+ ('test-cam-2', '시험 카메라 2', 'example', 'snapshot', NULL, 'not_connected', 20, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'));

@@ -38,6 +38,55 @@ const PASS_RESPONSE_HEADERS = ['content-type', 'content-length', 'content-range'
 // 구간 요청은 한쪽이라도 숫자가 있어야 한다. `bytes=-` 는 규격 밖이라 넘기지 않는다.
 const RANGE_RE = /^bytes=(\d+-\d*|-\d+)$/;
 
+/** 넘겨도 되는 구간 요청인가 — 규격에 맞고, 시작·끝이 둘 다 있으면 시작 ≤ 끝. */
+export function isForwardableRange(v: string): boolean {
+  if (!RANGE_RE.test(v)) return false;
+  const [start, end] = v.slice('bytes='.length).split('-');
+  if (start !== '' && end !== '' && Number(start) > Number(end)) return false; // MUTATION:CCTV-RANGE-ORDER
+  return true;
+}
+
+/** 본문이 이만큼 멈춰 있으면 연결을 끊는다 — 중계 서버가 머리말만 보내고 얼어붙었을 때 재생기가 영원히 돌지 않게. */
+export const IDLE_TIMEOUT_MS = 30_000;
+
+/** 조각이 idleMs 동안 안 오면 onIdle 을 부른다(부르는 쪽이 연결을 끊는다). 읽는 쪽이 취소하면 위로 그대로 전해진다. */
+export function withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number, onIdle: () => void): ReadableStream<Uint8Array> {
+  let ctrl: TransformStreamDefaultController<Uint8Array> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const idle = () => {
+    timer = null;
+    onIdle(); // 위쪽 연결을 끊는다
+    // 아래쪽(브라우저)도 바로 오류로 끝낸다 — 위쪽이 끊기는 것을 기다리지 않는다
+    try { ctrl?.error(new Error('CCTV relay stalled')); } catch { /* 이미 닫힘 */ }
+  };
+  const arm = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(idle, idleMs);
+  };
+  const disarm = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      start(controller) {
+        ctrl = controller;
+        arm();
+      },
+      transform(chunk, controller) {
+        arm();
+        controller.enqueue(chunk);
+      },
+      flush() {
+        disarm();
+      },
+      cancel() {
+        disarm();
+      },
+    }),
+  );
+}
+
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 
 /** 열람 토큰 수명. 사진 새로고침·영상 구간 요청이 이 안에서 같은 토큰을 쓴다. 지나면 다시 연다. */
@@ -115,7 +164,7 @@ export interface CameraView {
   playable: boolean;
 }
 
-export type CctvDeps = { fetch: (input: string, init?: RequestInit) => Promise<Response> };
+export type CctvDeps = { fetch: (input: string, init?: RequestInit) => Promise<Response>; idleTimeoutMs?: number };
 
 /** 기본 꺼짐 — "true" 가 아니면 모두 꺼짐으로 본다. */
 export function isEnabled(env: Env): boolean {
@@ -267,7 +316,7 @@ export async function proxyStream(
   // [재확인 필요] 요청 머리말만으로 Cloudflare 가장자리 캐시(.jpeg/.mp4 기본 캐시 대상)를 확실히 건너뛰는지는
   // G11 에서 실측한다. 아래 cf 옵션도 같이 두고, README 는 중계 호스트에 Bypass Cache 규칙을 권한다.
   headers.set('Cache-Control', 'no-cache');
-  if (range !== null && RANGE_RE.test(range)) headers.set('Range', range);
+  if (range !== null && isForwardableRange(range)) headers.set('Range', range);
   // 접속표는 중계 서버로만 간다. 브라우저·로그·감사기록에는 나오지 않는다.
   for (const [k, v] of target.authHeaders ?? []) headers.set(k, v);
 
@@ -289,6 +338,11 @@ export async function proxyStream(
     await upstream.body?.cancel().catch(() => undefined);
     throw new ApiError(502, code, message);
   };
+  if (upstream.status === 416) {
+    // 구간이 영상 범위를 벗어난 것은 클라이언트 쪽 문제 — 중계 서버 장애(502)로 보고하지 않는다
+    await upstream.body?.cancel().catch(() => undefined);
+    throw new ApiError(416, 'range_not_satisfiable', 'Requested range is outside the stream');
+  }
   if (upstream.status !== 200 && upstream.status !== 206) {
     return reject('relay_error', 'CCTV relay returned an unexpected response');
   }
@@ -296,6 +350,11 @@ export async function proxyStream(
   const ct = (upstream.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {
     return reject('relay_bad_content_type', 'CCTV relay returned an unexpected content type');
+  }
+  // 압축된 응답은 받지 않는다 — Worker 가 몸통을 풀어 버리면 넘겨준 content-length 와 어긋나 재생이 깨진다
+  const enc = (upstream.headers.get('content-encoding') ?? 'identity').trim().toLowerCase();
+  if (enc !== '' && enc !== 'identity') { // MUTATION:CCTV-ENCODING
+    return reject('relay_bad_encoding', 'CCTV relay returned a compressed response');
   }
 
   const out = new Headers();
@@ -306,7 +365,9 @@ export async function proxyStream(
   // 영상은 저장하지 않는다 (공통 미들웨어가 다시 no-store 를 씌우지만 여기서도 명시)
   out.set('Cache-Control', 'no-store');
   out.set('X-Content-Type-Options', 'nosniff');
-  return new Response(upstream.body, { status: upstream.status, headers: out });
+  // 머리말은 왔는데 몸통이 멈추면 끊는다 — 브라우저가 error 를 받아 다시 청하거나 안내를 낸다
+  const body = upstream.body === null ? null : withIdleTimeout(upstream.body, deps.idleTimeoutMs ?? IDLE_TIMEOUT_MS, () => ctl.abort()); // MUTATION:CCTV-IDLE
+  return new Response(body, { status: upstream.status, headers: out });
 }
 
 interface ViewSessionRow {

@@ -3,6 +3,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app';
 import {
+  isForwardableRange,
+  withIdleTimeout,
   ALLOWED_UPSTREAM_TYPES,
   isSafeStreamPath,
   isEnabled,
@@ -24,6 +26,7 @@ interface Upstream {
   status?: number;
   type?: string;
   body?: string | ReadableStream;
+  idleTimeoutMs?: number;
   headers?: Record<string, string>;
   throws?: boolean;
 }
@@ -37,6 +40,7 @@ async function cctvHarness(envOverrides: Partial<Env> = {}, upstream: Upstream =
   const app = createApp({
     jwks: () => createLocalJWKSet({ keys: [keys.jwk as JWK] }),
     now: () => clock.now,
+    ...(upstream.idleTimeoutMs !== undefined ? { cctvIdleTimeoutMs: upstream.idleTimeoutMs } : {}),
     fetch: async (url, init) => {
       calls.push({ url, init });
       if (upstream.throws) throw new Error('relay down');
@@ -786,5 +790,76 @@ describe('관리 등록 — sort 검사', () => {
     expect(res.status).toBe(200);
     const row = h.sqlite.prepare("SELECT sort FROM cctv_cameras WHERE camera_id = 'akis-gh9'").get() as { sort: number };
     expect(row.sort).toBe(20);
+  });
+});
+
+describe('CCTV 전달 — 구간 순서 · 416 · 압축 · 멈춤', () => {
+  it('시작이 끝보다 큰 구간은 넘기지 않는다', () => {
+    expect(isForwardableRange('bytes=0-99')).toBe(true);
+    expect(isForwardableRange('bytes=100-')).toBe(true);
+    expect(isForwardableRange('bytes=-500')).toBe(true);
+    expect(isForwardableRange('bytes=500-100')).toBe(false);
+    expect(isForwardableRange('bytes=-')).toBe(false);
+  });
+
+  it('중계 서버가 416 이면 502 로 위장하지 않고 416 으로 돌려준다', async () => {
+    const h = await cctvHarness({}, { status: 416 });
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN), headers: { Range: 'bytes=99999-' } });
+    spy.mockRestore();
+    expect(res.status).toBe(416);
+    expect((await json(res)).error.code).toBe('range_not_satisfiable');
+  });
+
+  it('압축된 응답은 거부한다 (content-length 와 어긋나 재생이 깨진다)', async () => {
+    const h = await cctvHarness({}, { headers: { 'content-encoding': 'gzip' } });
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
+    spy.mockRestore();
+    expect(res.status).toBe(502);
+    expect((await json(res)).error.code).toBe('relay_bad_encoding');
+    const ok = await cctvHarness({}, { headers: { 'content-encoding': 'identity' } });
+    addCamera(ok.sqlite, { camera_id: 'cam-1' });
+    const spy2 = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect((await ok.call(await playPath(ok, 'cam-1', ADMIN), { token: await ok.token(ADMIN) })).status).toBe(200);
+    spy2.mockRestore();
+  });
+
+  it('몸통이 멈추면 끊는다 — 조각이 오는 동안은 유지', async () => {
+    let idled = 0;
+    const stalled = new ReadableStream<Uint8Array>({ start() { /* never enqueues */ } });
+    const reader = withIdleTimeout(stalled, 20, () => { idled++; }).getReader();
+    await new Promise((r) => setTimeout(r, 80));
+    expect(idled).toBeGreaterThanOrEqual(1);
+    reader.releaseLock();
+
+    let idled2 = 0;
+    let n = 0;
+    const flowing = new ReadableStream<Uint8Array>({
+      pull(c) { n++; if (n > 5) return c.close(); return new Promise((r) => setTimeout(() => { c.enqueue(new Uint8Array([1])); r(); }, 10)); },
+    });
+    const r2 = withIdleTimeout(flowing, 40, () => { idled2++; }).getReader();
+    let got = 0;
+    for (;;) { const { done } = await r2.read(); if (done) break; got++; }
+    expect(got).toBe(5);
+    expect(idled2).toBe(0);
+  });
+
+  it('전달 중 중계 서버가 멈추면 연결이 끊긴다 (응답 몸통이 오류로 끝남)', async () => {
+    const stalled = new ReadableStream<Uint8Array>({ start() { /* 머리말만 오고 몸통은 영원히 안 온다 */ } });
+    const h = await cctvHarness({}, { body: stalled, idleTimeoutMs: 30 });
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
+    spy.mockRestore();
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    const outcome = await Promise.race([
+      reader.read().then(() => 'read').catch(() => 'error'),
+      new Promise<string>((r) => setTimeout(() => r('timeout'), 1500)),
+    ]);
+    expect(outcome).toBe('error');
   });
 });
