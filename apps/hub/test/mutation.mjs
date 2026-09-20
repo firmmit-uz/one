@@ -101,6 +101,8 @@ const MUTANTS = [
   ['cctv: 준비 판정에서 인증 설정 무시', 'src/cctv.ts', "return isEnabled(env) && relayOrigin(env) !== null && relayAuth(env).ok;", "return isEnabled(env) && relayOrigin(env) !== null;"],
   ['cctv: 열람 토큰 없이 재생 허용', 'src/cctv.ts', /^.*\/\/ MUTATION:CCTV-VIEW-SESSION\n.*\n.*\n/m, ''],
   ['cctv: HEAD 로 영상 연결 열기 허용', 'src/cctv.ts', "if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');", ''],
+  ['cctv: 거부할 때 중계 연결을 끊지 않음', 'src/cctv.ts', "    await upstream.body?.cancel().catch(() => undefined);\n", ''],
+  ['cctv: 가장자리 캐시 허용', 'src/cctv.ts', "cf: { cacheEverything: false }", "cf: { cacheEverything: true }"],
   ['cctv: 중계 서버 응답 형식 확인 끔', 'src/cctv.ts', 'if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {', 'if (false) {'],
   ['cctv: 중계 서버 응답 코드 확인 끔', 'src/cctv.ts', 'if (upstream.status !== 200 && upstream.status !== 206) {', 'if (false) {'],
   [

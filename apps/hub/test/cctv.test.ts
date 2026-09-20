@@ -23,7 +23,7 @@ const ORIGIN = 'https://hub.example.test';
 interface Upstream {
   status?: number;
   type?: string;
-  body?: string;
+  body?: string | ReadableStream;
   headers?: Record<string, string>;
   throws?: boolean;
 }
@@ -145,7 +145,7 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
     expect(relayAuth(envOf({ CCTV_RELAY_AUTH: '  ' })).ok).toBe(false);
     expect(relayAuth(envOf({ CCTV_RELAY_AUTH: 'none' }))).toEqual({ ok: true, headers: [] });
     expect(relayAuth(envOf({ CCTV_RELAY_AUTH: ' none ' }))).toEqual({ ok: true, headers: [] });
-    for (const bad of ['bearer', 'BASIC', 'digest', 'cf_access', 'x']) {
+    for (const bad of ['bearer', 'BASIC', 'digest', 'cf_access', 'x', '<CCTV_RELAY_AUTH>']) {
       expect(relayAuth(envOf({ CCTV_RELAY_AUTH: bad })).ok).toBe(false);
     }
   });
@@ -159,6 +159,7 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
     await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
     spy.mockRestore();
     expect(h.calls[0]!.init?.redirect).toBe('manual');
+    expect((h.calls[0]!.init as { cf?: { cacheEverything?: boolean } }).cf?.cacheEverything).toBe(false);
     expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Cache-Control')).toBe('no-cache');
   });
 
@@ -706,10 +707,10 @@ describe('CCTV 열람 세션 · 요청 방식 · Range 규격', () => {
       .prepare("INSERT INTO cctv_view_sessions (token, camera_id, actor_email, opened_at, expires_at) VALUES (?, 'cam-1', 'old@example.invalid', '2020-01-01T00:00:00.000Z', '2020-01-01T00:15:00.000Z')")
       .run('00000000-0000-4000-8000-000000000000');
     await playPath(h, 'cam-1', ADMIN);
-    const rows = h.sqlite.prepare('SELECT token, camera_id, expires_at FROM cctv_view_sessions').all() as { token: string; camera_id: string; expires_at: string }[];
+    const rows = h.sqlite.prepare('SELECT token, camera_id, opened_at, expires_at FROM cctv_view_sessions').all() as { token: string; camera_id: string; opened_at: string; expires_at: string }[];
     expect(rows.length).toBe(1);
     expect(rows[0]!.token).not.toBe('00000000-0000-4000-8000-000000000000');
-    expect(rows[0]!.expires_at > rows[0]!.token ? true : true).toBe(true);
+    expect(rows[0]!.expires_at).toBe(new Date(Date.parse(rows[0]!.opened_at) + 15 * 60 * 1000).toISOString());
     const audit = h.sqlite.prepare("SELECT detail_json FROM audit_log WHERE action = 'cctv_view_open'").get() as { detail_json: string };
     expect(audit.detail_json).not.toContain(rows[0]!.token); // 토큰은 감사기록에 넣지 않는다
   });
@@ -744,6 +745,22 @@ describe('CCTV 열람 세션 · 요청 방식 · Range 규격', () => {
       const admin = await json(await h.call('/api/admin/cctv', { token: await h.token(ADMIN) }));
       expect(admin.relay_configured).toBe(false);
       expect(admin.cameras[0].playable).toBe(false);
+    }
+  });
+});
+
+describe('CCTV 전달 — 거부할 때 중계 연결을 끊는다', () => {
+  it('응답 코드·형식이 어긋나면 업스트림 본문을 취소한다', async () => {
+    for (const upstream of [{ status: 500 }, { type: 'text/html' }] as Upstream[]) {
+      let cancelled = false;
+      const body = new ReadableStream({ cancel() { cancelled = true; } });
+      const h = await cctvHarness({}, { ...upstream, body });
+      addCamera(h.sqlite, { camera_id: 'cam-1' });
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
+      spy.mockRestore();
+      expect(res.status).toBe(502);
+      expect(cancelled).toBe(true);
     }
   });
 });

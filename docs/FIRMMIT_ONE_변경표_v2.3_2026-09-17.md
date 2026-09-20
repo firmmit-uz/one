@@ -373,3 +373,23 @@ FIRMMIT 확인: **Tapo 는 휴대폰 앱 전용이고 웹 콘솔이 없다.** �
 | 1 | `redirect:'manual'` 거부 문구는 **workerd 바이너리 문자열**로 확인했다. 실제 배포 환경에서 재생 1회 실측 필요 (G11) |
 | 2 | 다크 모드(C단계)는 시안 토큰 12쌍만 있고 적용하지 않았다 |
 | 3 | 「다운 앱 수」 지표 카드의 배지는 `display_status`(측정 상태) 를 따르므로 값이 1이어도 "정상" 이다. 시안은 "장애" 로 그렸으나 KPI 계약 변경이라 두었다 — FIRMMIT 판단 필요 |
+
+## B-5. 코드 리뷰 3차 (Z72–Z80) · 보안 검토
+
+`/code-review`(high) 3차 9건 → 전부 수정. `security-review`(하위 분석 + 거짓 양성 필터) → **HIGH·MEDIUM 0건**.
+
+| ID | 위치 | 상태 | 내용 |
+|---|---|---|---|
+| Z72 | `public/app.js` | 수정함 | 재생기마다 자기 타이머·생사 표시 — 떼어낸 옛 재생기의 `load`/`error` 가 새 재생기를 멈추거나 덮어쓰던 것. mp4 도 같은 정지 경로 |
+| Z73 | `wrangler.jsonc` `test/headers.test.ts` `README.md` | 수정함 | 배포 기본값 `CCTV_RELAY_AUTH` 를 `"none"` → 자리표시자 `<CCTV_RELAY_AUTH>` (모르는 방식이라 거부). Z57 fail-closed 가 기본값에 뚫려 있었다. vars 정확 비교 갱신 |
+| Z74 | `src/cctv.ts` | 수정함 · **[재확인 필요]** | 요청 머리말 `no-cache` 만으로 Cloudflare 가장자리 캐시(.jpeg/.mp4 기본 캐시)를 건너뛰는지 불확실 → `cf: { cacheEverything: false }` 병기, G11 실측 항목 추가. 중계 호스트 Bypass Cache 규칙 권고 |
+| Z75 | `src/cctv.ts` | 수정함 | 응답 코드·형식이 어긋나 거부할 때 업스트림 본문 `cancel()` — 안 읽을 영상이 온실 업로드 회선을 계속 타지 않게 |
+| Z76 | `public/app.js` | 수정함 | 열람 토큰 15분 만료 뒤 재생이 끊기면 **한 번** 다시 열어(열람 기록 1건 더) 이어 본다. 또 끊기면 안내 |
+| Z77 | `public/i18n.js` | 수정함 | `relay_configured=false` 안내가 "주소 없음" 만 말하던 것 → 주소 **또는 인증** 설정 |
+| Z78 | `public/i18n.js` | 수정함 | 감사 동작 라벨 `action_cctv_view_open`·`cctv_camera_create`·`cctv_camera_update` 3개 언어 — 감사 표에 원시 코드가 보이던 것 |
+| Z79 | `test/cctv.test.ts` | 수정함 | 동어반복 단언 제거 → `expires_at = opened_at + 15분` 실제 검증. 본문 취소·`cf` 옵션·자리표시자 거부 시험 추가 |
+| Z80 | `src/admin.ts` | 수정함 | 카메라 등록의 `before` 를 batch 준비 함수 **안**에서 읽음 — `runAudited` 재시도 시 감사기록이 묵은 값을 담지 않게 |
+
+시험: hub **304/304** · 변이 **50/50** 미검출 0 · typecheck 0 · 화면 18장 + 흐름 3 실패 0 · 번들 619.1 KiB.
+
+보안 검토가 본 경계: `/api/cctv/*` 권한(인증→CSRF→주체→`requireHubAdmin`) · SSRF(호스트는 env, 경로만 입력) · 전달 콘텐츠 XSS(형식 정확 일치·nosniff·CSP) · 저장 필드 XSS(`textContent`) · SQLi(바인딩) · 열람 토큰(UUID·카메라+사람+만료) · 비밀값 노출 없음. 기준 미만 관찰 1건: 퍼센트 인코딩 점 구간(`%2e%2e`)은 호스트 고정이라 경로만 제어 — G11 에서 중계 서버 동작 확인 권장.

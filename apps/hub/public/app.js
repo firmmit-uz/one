@@ -616,12 +616,14 @@ async function viewMe(main) {
 // 영상은 같은 출처(/api/cctv/:id/play)로만 받는다 → 보안 헤더(CSP)를 그대로 둔다.
 const CCTV_KIND_KEY = { mp4: 'cctv_kind_mp4', snapshot: 'cctv_kind_snapshot' };
 const SNAPSHOT_MS = 2000;
-let cctvTimer = null;
+// 한 번에 재생기 하나. 현재 재생기의 정지 함수만 들고 있다 — 떼어낸 옛 재생기의 이벤트가 새 재생기를 건드리지 못하게.
+let cctvStop = null;
 
 function stopCctv() {
-  if (cctvTimer !== null) {
-    window.clearTimeout(cctvTimer);
-    cctvTimer = null;
+  if (cctvStop !== null) {
+    const stop = cctvStop;
+    cctvStop = null;
+    stop();
   }
 }
 
@@ -633,23 +635,32 @@ function cctvStateBadge(cam) {
 
 // playPath 는 /open 이 돌려준 값(열람 토큰 포함)이다. 화면이 직접 주소를 만들지 않는다.
 function cctvPlayer(cam, playPath, onError) {
+  stopCctv();
+  // 재생기마다 자기 타이머·자기 생사 표시를 가진다. 떼어낸 뒤 늦게 도착한 load/error 는 무시된다.
+  let live = true;
+  let timer = null;
+  const stop = () => {
+    live = false;
+    if (timer !== null) { window.clearTimeout(timer); timer = null; }
+  };
+  cctvStop = stop;
   const src = playPath;
   const bust = () => `${src}${src.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  const failed = (e) => { if (!live) return; stop(); onError(e); };
   if (cam.stream_kind === 'snapshot') {
     const img = el('img', { class: 'cctv-media', alt: `${t('cctv_snapshot_alt')} — ${cam.name_ko}`, src: bust() });
-    stopCctv();
     // 앞 그림이 다 온 뒤에 다음을 청한다 — 회선이 느릴 때 요청이 겹쳐 쌓이지 않게
     const next = () => {
-      if (!img.isConnected) return stopCctv();
-      cctvTimer = window.setTimeout(() => { img.src = bust(); }, SNAPSHOT_MS);
+      if (!live || !img.isConnected) return stop();
+      timer = window.setTimeout(() => { if (live) img.src = bust(); }, SNAPSHOT_MS);
     };
     img.addEventListener('load', next);
-    img.addEventListener('error', (e) => { stopCctv(); onError(e); });
+    img.addEventListener('error', failed);
     return img;
   }
   const video = el('video', { class: 'cctv-media', src, controls: true, autoplay: true, muted: true, playsinline: true });
   video.muted = true;
-  video.addEventListener('error', onError);
+  video.addEventListener('error', failed);
   return video;
 }
 
@@ -698,12 +709,25 @@ async function viewCctv(main) {
           return;
         }
         open.disabled = false;
-        const fail = () => put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') }));
-        put(stage,
+        const showFail = () => put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') }));
+        // 열람 토큰은 15분이면 지난다. 재생이 끊기면 **한 번** 다시 열어(열람 기록 1건 더) 이어 본다. 또 끊기면 안내.
+        let reopened = false;
+        const start = (playPath) => put(stage,
           el('div', { class: 'section-head' },
             el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
             el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
-          cctvPlayer(cam, typeof opened.play_path === 'string' ? opened.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`, fail));
+          cctvPlayer(cam, playPath, onFail));
+        async function onFail() {
+          if (reopened) return showFail();
+          reopened = true;
+          try {
+            const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
+            start(typeof again.play_path === 'string' ? again.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`);
+          } catch {
+            showFail();
+          }
+        }
+        start(typeof opened.play_path === 'string' ? opened.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`);
         stage.scrollIntoView({ block: 'nearest' });
       },
     });

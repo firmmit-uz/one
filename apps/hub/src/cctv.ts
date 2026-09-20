@@ -257,6 +257,8 @@ export async function proxyStream(
 ): Promise<Response> {
   const headers = new Headers();
   // 실시간이어야 하므로 중간 캐시를 쓰지 않는다. 브라우저 쪽 ?t= 만으로는 가장자리 캐시를 못 막는다.
+  // [재확인 필요] 요청 머리말만으로 Cloudflare 가장자리 캐시(.jpeg/.mp4 기본 캐시 대상)를 확실히 건너뛰는지는
+  // G11 에서 실측한다. 아래 cf 옵션도 같이 두고, README 는 중계 호스트에 Bypass Cache 규칙을 권한다.
   headers.set('Cache-Control', 'no-cache');
   if (range !== null && RANGE_RE.test(range)) headers.set('Range', range);
   // 접속표는 중계 서버로만 간다. 브라우저·로그·감사기록에는 나오지 않는다.
@@ -268,20 +270,25 @@ export async function proxyStream(
   try {
     // workerd 는 redirect:'error' 를 구현하지 않고 TypeError 를 던진다(바이너리 문구 확인).
     // 'manual' 로 받고 3xx 는 아래 200/206 검사가 그대로 거부한다. MUTATION:CCTV-REDIRECT
-    upstream = await deps.fetch(target.url, { method: 'GET', headers, redirect: 'manual', signal: ctl.signal });
+    upstream = await deps.fetch(target.url, { method: 'GET', headers, redirect: 'manual', signal: ctl.signal, cf: { cacheEverything: false } });
   } catch {
     throw new ApiError(502, 'relay_unreachable', 'CCTV relay did not respond');
   } finally {
     clearTimeout(timer);
   }
 
+  // 거부할 때는 중계 연결을 바로 끊는다 — 안 읽을 영상이 온실 업로드 회선을 계속 타지 않게. MUTATION:CCTV-CANCEL
+  const reject = async (code: string, message: string): Promise<never> => {
+    await upstream.body?.cancel().catch(() => undefined);
+    throw new ApiError(502, code, message);
+  };
   if (upstream.status !== 200 && upstream.status !== 206) {
-    throw new ApiError(502, 'relay_error', 'CCTV relay returned an unexpected response');
+    return reject('relay_error', 'CCTV relay returned an unexpected response');
   }
   // 형식 확인: 목록 밖이면 내보내지 않는다 (허브 출처로 HTML·JS 가 들어오는 것을 막는다)
   const ct = (upstream.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {
-    throw new ApiError(502, 'relay_bad_content_type', 'CCTV relay returned an unexpected content type');
+    return reject('relay_bad_content_type', 'CCTV relay returned an unexpected content type');
   }
 
   const out = new Headers();

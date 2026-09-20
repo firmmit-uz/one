@@ -108,7 +108,7 @@ describe('보안 헤더·캐시', () => {
       TOKEN_REFRESH_ENABLED: 'false',
       CCTV_ENABLED: 'false',
       CCTV_RELAY_ORIGIN: '<CCTV_RELAY_ORIGIN>',
-      CCTV_RELAY_AUTH: 'none',
+      CCTV_RELAY_AUTH: '<CCTV_RELAY_AUTH>',
     });
     expect(cfg.vars.DEV_FAKE_IDENTITY).toBeUndefined();
     // 비밀값(API 토큰)은 설정에 없어야 한다 — Worker Secret 으로만 넣는다

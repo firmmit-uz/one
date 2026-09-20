@@ -344,7 +344,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    ```
 2. `wrangler.jsonc` 에서
    - `CCTV_RELAY_ORIGIN` → 4.3.1-4 에서 만든 **터널 호스트 주소**(`https://...`)
-   - `CCTV_RELAY_AUTH` → `"cf-access"` 또는 `"basic"`
+   - `CCTV_RELAY_AUTH` → `"cf-access"` 또는 `"basic"` (배포 설정의 기본값은 자리표시자 `<CCTV_RELAY_AUTH>` 이고 그대로면 거부된다. `"none"` 도 직접 적어야 한다)
    **자리표시자 `<CCTV_RELAY_ORIGIN>` 그대로면 꺼진 것과 같게 동작한다.**
 3. 배포 후 관리 화면(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다**:
    ```json

@@ -377,12 +377,15 @@ export function adminRoutes() {
     // 경로가 없으면 미연결, 있으면 연결 — 상태를 따로 받지 않아 어긋날 수 없다
     const status = body.stream_path === null ? 'not_connected' : 'active';
     const db = c.env.DB;
-    const before = await getCamera(db, body.camera_id);
     const now = c.get('now').toISOString();
     const actor = c.get('principal').email;
-    const sort = body.sort ?? before?.sort ?? 0;
+    // 이전 상태는 batch 를 준비할 때마다 읽는다 — runAudited 가 재시도하면 다시 읽으므로 감사기록이 묵은 값을 담지 않는다
+    let before: Awaited<ReturnType<typeof getCamera>> = null;
 
-    await runAudited(db, async () => ({
+    await runAudited(db, async () => {
+      before = await getCamera(db, body.camera_id);
+      const sort = body.sort ?? before?.sort ?? 0;
+      return {
       stmts: [
         db
           .prepare(
@@ -412,7 +415,8 @@ export function adminRoutes() {
         },
         request_id: c.get('requestId'),
       },
-    }));
+      };
+    });
 
     const row = await getCamera(db, body.camera_id);
     if (row === null) throw new ApiError(500, 'internal_error', 'Internal error');
