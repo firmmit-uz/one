@@ -281,11 +281,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   .tab-short { display: inline; }
   /* 목록은 앞부분만 두고 단추로 펼친다 */
   .more-btn { display: inline-flex; margin-top: 10px; }
-  .kpi-grid.is-collapsed > :nth-child(n + 5) { display: none; }
-  .card-grid.is-collapsed > li:nth-child(n + 4) { display: none; }
-  /* 표는 핵심 두 열(이름·상태)만 두고 행마다 펼친다 */
+  .is-collapsed > .more-item { display: none; }
+  /* 표는 표마다 정한 핵심 열(기본: 이름·상태)만 두고 행마다 펼친다 — 어떤 열을 남길지는 table() 의 keep 이 정한다 */
   .row-expand { display: inline-grid; place-items: center; }
-  .table-stack tr.is-collapsed td:nth-child(n + 3) { display: none; }
+  .table-stack tr.is-collapsed td:not(.col-keep) { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -309,3 +309,67 @@ FIRMMIT 확인: **Tapo 는 휴대폰 앱 전용이고 웹 콘솔이 없다.** �
 - 기존 마이그레이션 `0001`–`0006` 수정, 기존 시험 삭제·완화
 - 보안 헤더 완화 (CSP 그대로 — 오히려 시험으로 못 박았다)
 - 커밋·푸시
+
+
+---
+
+# 부록 B. 디자인 개편 · 코드 리뷰 결함 수정 (2026-09-20, Z52–Z71)
+
+브랜치 `claude/happy-pascal-62c6z1` 의 두 번째 묶음이다. 순서: `CLAUDE.md` 기준 숫자 실측 갱신 → 디자인 시안 A·B 단계 반영 → `/code-review`(high) 2회로 결함 16건 → 전부 수정.
+
+## B-1. 변경 항목
+
+| ID | 위치 | 상태 | 내용 |
+|---|---|---|---|
+| Z52 | `CLAUDE.md` | 수정함 | 기준 시험 숫자가 Phase 1.5 시작 시점 옛 값(135/135 · 9/9 · 137 KiB · 13장)이었다. 9개 명령을 다시 돌려 실측값으로 갱신, §5 기준선을 괄호로 병기 |
+| Z53 | `public/styles.css` | 수정함 | **디자인 A단계** — 시안(1a 확정)의 토큰·여백·계층·상태 표현만 반영. 마크업·동작 불변 |
+| Z54 | `public/app.js` `index.html` `i18n.js` `styles.css` | 수정함 | **디자인 B단계** — 요약 띠 배지 · "준비 중" 지표 뒤로 · 390px 목록 접기 · 탭 축약 · 표 행 펼치기 |
+| Z55 | `src/cctv.ts` | 수정함 | **[치명]** `redirect:'error'` 는 workerd 가 거부(TypeError) → 실제 Worker 에서 모든 `/play` 가 502. `'manual'` 로 바꾸고 3xx 는 200/206 검사가 거부. 시험·변이 고정 |
+| Z56 | `src/cctv.ts` | 수정함 | 허브→중계 요청에 `Cache-Control: no-cache` — 가장자리 캐시로 멈춘 사진이 실시간처럼 보이는 일 방지 |
+| Z57 | `src/cctv.ts` `README.md` | 수정함 | `CCTV_RELAY_AUTH` 가 비어 있으면 익명('none')으로 부르던 것을 **거부**로 (fail-closed). 'none' 도 적어서 골라야 한다 |
+| Z58 | `public/styles.css` | 수정함 | A단계에서 입력칸·보조 단추 테두리 대비가 1.28:1 로 떨어진 것을 `--line-strong` 으로 복구. 비활성 단추는 팔레트 안 색(`--muted`/`--muted-bg`, 7:1) + `not-allowed` |
+| Z59 | `migrations/0008_cctv_view.sql` `src/cctv.ts` | 수정함 | **열람 세션 토큰** — `/open` 이 감사기록과 **한 batch** 로 토큰을 남기고, `/play` 는 같은 카메라·같은 사람·15분 안의 토큰이 있어야 연다. 주소를 직접 쳐서 감사기록 없이 보던 구멍을 막았다. 토큰은 감사기록에 넣지 않는다 |
+| Z60 | `src/cctv.ts` `src/admin.ts` | 수정함 | `relayReady(env)` 한 곳 — 켜짐·주소·**인증 설정** 셋을 같이 본다. 목록이 "볼 수 있음" 인데 재생이 인증 오류로 막히던 어긋남 제거 (세 곳 중복 → 한 곳) |
+| Z61 | `src/cctv.ts` | 수정함 | `HEAD /play` 는 405 — Hono 가 HEAD 를 GET 으로 보내 아무도 읽지 않을 영상 연결이 열리던 것 |
+| Z62 | `src/cctv.ts` | 수정함 | `Range` 규격: `bytes=-`(양쪽 빈 값)는 넘기지 않는다 |
+| Z63 | `src/cctv.ts` | 수정함 | 역슬래시 검사 제거 — URL 파서가 경로의 `\` 를 `/` 로 바꿔 되감기 검사에서 걸리므로 **중복 방어**였다(변이 미검출). 질의 안 `\` 는 출처를 벗어나지 않으므로 허용, 시험으로 고정 |
+| Z64 | `src/guard.ts` `src/admin.ts` `src/cctv.ts` `src/validate.ts` | 수정함 | ADMIN 관문을 `requireHubAdmin` 한 곳으로, `CONTROL_RE` 는 `validate.ts` 에서 내보내 재선언 제거, `FAIL_STATUS` 의 도달 불가 404 분기 제거 |
+| Z65 | `public/app.js` `i18n.js` | 수정함 | **관리 화면 카메라 등록 폼** — 문구·README 가 가리키던 "관리 화면" 이 실제로 없었다. 경로만 받고, 비우면 미연결 |
+| Z66 | `public/i18n.js` | 수정함 | CCTV 서버 오류 코드 10종의 사람 문구 — 중계 PC 정전이 "서버 오류" 로 보이던 것 |
+| Z67 | `public/app.js` | 수정함 | 사진 새로고침을 `setInterval` 에서 **앞 그림이 다 온 뒤 다음 청함** 으로 — 느린 회선에서 요청이 겹쳐 쌓이지 않게 |
+| Z68 | `public/app.js` `styles.css` | 수정함 | 접기·표 펼침을 CSS `nth-child` 고정값에서 **JS 가 붙인 클래스**(`more-item`·`col-keep`) 로 — `table()` 은 `keep` 으로 남길 열을 표마다 정한다 |
+| Z69 | `public/app.js` `test/ui_screens.py` | 수정함 | **회귀 수정**: B단계 표 펼침이 CCTV 표에서 상태 배지와 "영상 보기" 단추를 숨겼다. `keep:[3,4]` 로 복구하고 390px 흐름 시험으로 고정 |
+| Z70 | `test/mutation.mjs` | 수정함 | 새 방어마다 변이 추가 — https 전용 · 사용자정보 · 경로/질의/조각 · Range 목록 · basic `:` · 준비 판정 인증 · 열람 세션 · HEAD · 빈 인증 · 자동 따라가기 · no-cache |
+| Z71 | `test/cctv.test.ts` `test/ui-server.ts` | 수정함 | 시험 환경은 `CCTV_RELAY_AUTH: 'none'` 을 **명시** (Z57 의 fail-closed 와 맞춤). 열람 토큰 도우미 `playPath` |
+
+## B-2. 시험 결과표
+
+| # | 명령 | 부록 A 뒤 | 부록 B 뒤 | 판정 |
+|---|---|---|---|---|
+| 1 | `npm test -w packages/contracts` | 85건·불일치 0 / 60/60 / 17/17 / 17/17 / 21/21 | 동일 | 유지 |
+| 2 | `npm test -w apps/hub` | 12파일 · 294/294 | 12파일 · **303/303** | 증가 |
+| 3 | `npm run typecheck -w apps/hub` | 오류 0 | 오류 0 | 유지 |
+| 4 | `npm run test:mutation -w apps/hub` | 38/38 · 미검출 0 | **48/48 · 미검출 0** | 증가 |
+| 5 | `npm run test:bundle -w apps/hub` | 9/9 · 금지 0건 | 9/9 · 금지 0건 | 유지 |
+| 6 | `npm run build:dry -w apps/hub` | 617.9 KiB | 618.8 KiB | 기록만 |
+| 7 | `npm run test:ui -w apps/hub` | 17장 + 흐름 2 | **18장 + 흐름 3** · 실패 0 | 증가 |
+| 8 | `npm test -w apps/showroom` | 38/38 | 38/38 | 유지 |
+| 9 | `npm run test:ui -w apps/showroom` | 27/27 · 외부 요청 0 | 동일 | 유지 |
+
+`0001`–`0007` 마이그레이션과 기존 해시는 **바뀌지 않았다.** `0008_cctv_view.sql` 이 새로 추가됐다.
+
+## B-3. 남은 운영 검증
+
+| ID | 무엇을 확인 | 틀리면 고칠 곳 |
+|---|---|---|
+| **G11** | 실제 중계 서버 연결 · **H.264 재생** · `redirect:'manual'` 이 실제 Worker 에서 정상인지 · 열람 토큰 15분 안에서 영상 구간 요청이 끊기지 않는지 | `src/cctv.ts` |
+| **G02** | `cctv_view_sessions` 삽입 + 감사기록이 원격 D1 batch 에서 한 덩어리로 도는지 | `src/cctv.ts` |
+| **G12** (신규) | 디자인 반영 뒤 실제 휴대폰(390px 급)에서 접기·표 펼침·탭 축약 확인 | `public/*` |
+
+## B-4. `[재확인 필요]`
+
+| # | 항목 |
+|---|---|
+| 1 | `redirect:'manual'` 거부 문구는 **workerd 바이너리 문자열**로 확인했다. 실제 배포 환경에서 재생 1회 실측 필요 (G11) |
+| 2 | 다크 모드(C단계)는 시안 토큰 12쌍만 있고 적용하지 않았다 |
+| 3 | 「다운 앱 수」 지표 카드의 배지는 `display_status`(측정 상태) 를 따르므로 값이 1이어도 "정상" 이다. 시안은 "장애" 로 그렸으나 KPI 계약 변경이라 두었다 — FIRMMIT 판단 필요 |

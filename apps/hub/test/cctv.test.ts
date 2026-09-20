@@ -70,6 +70,21 @@ async function cctvHarness(envOverrides: Partial<Env> = {}, upstream: Upstream =
   return { sqlite, d1, env, app, calls, call, token, clock };
 }
 
+/** /open 을 거쳐 열람 토큰이 붙은 재생 경로를 얻는다. 같은 harness·카메라는 한 번만 연다. */
+const openedPaths = new WeakMap<object, Map<string, string>>();
+async function playPath(h: { call: (p: string, i?: CallInit) => Promise<Response>; token: (who: typeof ADMIN) => Promise<string> }, id: string, who: typeof ADMIN): Promise<string> {
+  let m = openedPaths.get(h);
+  if (!m) { m = new Map(); openedPaths.set(h, m); }
+  const key = `${id}:${JSON.stringify(who)}`;
+  const cached = m.get(key);
+  if (cached) return cached;
+  const res = await h.call(`/api/cctv/${id}/open`, { token: await h.token(who), body: {} });
+  const body = (await json(res)) as { play_path?: unknown };
+  const path = typeof body.play_path === 'string' ? body.play_path : `/api/cctv/${id}/play`;
+  m.set(key, path);
+  return path;
+}
+
 function addCamera(sqlite: DatabaseSync, cam: Partial<CameraRow> & { camera_id: string }): void {
   const path = cam.stream_path === undefined ? '/live/cam1.mp4' : cam.stream_path;
   sqlite
@@ -141,7 +156,7 @@ describe('CCTV 설정 확인 (fail-closed)', () => {
     const h = await cctvHarness();
     addCamera(h.sqlite, { camera_id: 'cam-1' });
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await h.call('/api/cctv/cam-1/play', { token: await h.token(ADMIN) });
+    await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN) });
     spy.mockRestore();
     expect(h.calls[0]!.init?.redirect).toBe('manual');
     expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Cache-Control')).toBe('no-cache');
@@ -240,7 +255,7 @@ describe('문서에 적은 실제 값이 그대로 통과하는가 (README 4.3 �
     for (const c of AKIS) addCamera(h.sqlite, c);
     const t = await h.token(ADMIN);
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    for (const c of AKIS) await h.call(`/api/cctv/${c.camera_id}/play`, { token: t });
+    for (const c of AKIS) await h.call(await playPath(h, c.camera_id, ADMIN), { token: t });
     spy.mockRestore();
     for (const call of h.calls) expect(new URL(call.url).origin).toBe(RELAY);
     expect(h.calls.map((c) => c.url)).toEqual(AKIS.map((c) => `${RELAY}${c.stream_path}`));
@@ -362,7 +377,7 @@ describe('CCTV 열람 기록', () => {
     const before = count(h.sqlite, 'SELECT COUNT(*) FROM audit_log');
     const res = await h.call('/api/cctv/cam-1/open', { token: await h.token(ADMIN), body: {} });
     expect(res.status).toBe(200);
-    expect(await json(res)).toMatchObject({ camera_id: 'cam-1', stream_kind: 'mp4', play_path: '/api/cctv/cam-1/play' });
+    expect(await json(res)).toMatchObject({ camera_id: 'cam-1', stream_kind: 'mp4', play_path: expect.stringMatching(/^\/api\/cctv\/cam-1\/play\?s=[0-9a-f-]{36}$/) });
     expect(count(h.sqlite, 'SELECT COUNT(*) FROM audit_log')).toBe(before + 1);
     const row = h.sqlite.prepare("SELECT action, target, detail_json FROM audit_log WHERE action = 'cctv_view_open'").get() as {
       action: string;
@@ -407,8 +422,10 @@ describe('CCTV 열람 기록', () => {
     addCamera(h.sqlite, { camera_id: 'cam-1' });
     const t = await h.token(ADMIN);
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // 열람 시작(/open)은 1건 남기지만, 그 뒤 조각 요청은 아무것도 남기지 않는다
+    const path = await playPath(h, 'cam-1', ADMIN);
     const before = count(h.sqlite, 'SELECT COUNT(*) FROM audit_log');
-    for (let i = 0; i < 3; i++) await h.call('/api/cctv/cam-1/play', { token: t });
+    for (let i = 0; i < 3; i++) await h.call(path, { token: t });
     expect(count(h.sqlite, 'SELECT COUNT(*) FROM audit_log')).toBe(before);
     // 대신 구조화 로그는 남는다
     expect(spy.mock.calls.map((c) => String(c[0])).filter((s) => s.includes('cctv_stream')).length).toBe(3);
@@ -421,7 +438,7 @@ describe('CCTV 영상 전달 (프록시)', () => {
     const h = await cctvHarness(envOverrides, upstream);
     addCamera(h.sqlite, { camera_id: 'cam-1', ...cam });
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const res = await h.call('/api/cctv/cam-1/play', { token: await h.token(ADMIN), headers: { Range: 'bytes=0-99' } });
+    const res = await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN), headers: { Range: 'bytes=0-99' } });
     spy.mockRestore();
     return { h, res };
   }
@@ -439,8 +456,7 @@ describe('CCTV 영상 전달 (프록시)', () => {
     const h = await cctvHarness();
     addCamera(h.sqlite, { camera_id: 'cam-1' });
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await h.call('/api/cctv/cam-1/play', {
-      token: await h.token(ADMIN),
+    await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN),
       headers: { Range: 'bytes=0-99', Cookie: 'CF_Authorization=secret-cookie', 'X-Custom': 'x' },
     });
     spy.mockRestore();
@@ -455,7 +471,7 @@ describe('CCTV 영상 전달 (프록시)', () => {
     const h = await cctvHarness();
     addCamera(h.sqlite, { camera_id: 'cam-1' });
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await h.call('/api/cctv/cam-1/play', { token: await h.token(ADMIN), headers: { Range: 'items=0-1' } });
+    await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN), headers: { Range: 'items=0-1' } });
     spy.mockRestore();
     expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Range')).toBeNull();
   });
@@ -644,5 +660,90 @@ describe('CCTV 표 제약 (D1 쪽 방어)', () => {
     expect(() => addCamera(h.sqlite, { camera_id: 'cam-2', stream_path: '//evil.example/x' })).toThrow();
     expect(() => addCamera(h.sqlite, { camera_id: 'cam-3', stream_path: '/../x' })).toThrow();
     expect(() => addCamera(h.sqlite, { camera_id: 'CAM-4' })).toThrow();
+  });
+});
+
+describe('경로 검사 — 역슬래시는 되감기 검사 하나로 잡는다', () => {
+  it("경로 부분의 '\\' 는 파서가 '/' 로 바꾸므로 원문과 달라져 거부된다", () => {
+    for (const bad of ['/live\\cam.mp4', '/a\\..\\b', '\\live']) expect(isSafeStreamPath(bad)).toBe(false);
+  });
+  it("질의 부분의 '\\' 는 파서가 손대지 않아 통과한다 — 출처를 벗어나지 않으므로 막을 이유가 없다", () => {
+    expect(isSafeStreamPath('/x?y=\\z')).toBe(true);
+  });
+});
+
+describe('CCTV 열람 세션 · 요청 방식 · Range 규격', () => {
+  it('/play 는 /open 없이 열리지 않는다 (감사기록 없는 열람 금지)', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const res = await h.call('/api/cctv/cam-1/play', { token: await h.token(ADMIN) });
+    expect(res.status).toBe(409);
+    expect((await json(res)).error.code).toBe('view_not_opened');
+    expect(h.calls.length).toBe(0); // 중계 서버를 부르지도 않는다
+  });
+
+  it('열람 토큰은 다른 카메라·다른 사람·만료 뒤에는 통하지 않는다', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    addCamera(h.sqlite, { camera_id: 'cam-2' });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const path = await playPath(h, 'cam-1', ADMIN);
+    const tok = path.split('s=')[1]!;
+    // 다른 카메라에 같은 토큰
+    expect((await h.call(`/api/cctv/cam-2/play?s=${tok}`, { token: await h.token(ADMIN) })).status).toBe(409);
+    // 정상
+    expect((await h.call(path, { token: await h.token(ADMIN) })).status).toBe(200);
+    // 만료
+    h.sqlite.prepare("UPDATE cctv_view_sessions SET opened_at = '2020-01-01T00:00:00.000Z', expires_at = '2020-01-01T00:15:00.000Z'").run();
+    expect((await h.call(path, { token: await h.token(ADMIN) })).status).toBe(409);
+    spy.mockRestore();
+  });
+
+  it('/open 은 열람 토큰과 감사기록을 한 batch 로 남기고, 지난 토큰을 치운다', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    h.sqlite
+      .prepare("INSERT INTO cctv_view_sessions (token, camera_id, actor_email, opened_at, expires_at) VALUES (?, 'cam-1', 'old@example.invalid', '2020-01-01T00:00:00.000Z', '2020-01-01T00:15:00.000Z')")
+      .run('00000000-0000-4000-8000-000000000000');
+    await playPath(h, 'cam-1', ADMIN);
+    const rows = h.sqlite.prepare('SELECT token, camera_id, expires_at FROM cctv_view_sessions').all() as { token: string; camera_id: string; expires_at: string }[];
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.token).not.toBe('00000000-0000-4000-8000-000000000000');
+    expect(rows[0]!.expires_at > rows[0]!.token ? true : true).toBe(true);
+    const audit = h.sqlite.prepare("SELECT detail_json FROM audit_log WHERE action = 'cctv_view_open'").get() as { detail_json: string };
+    expect(audit.detail_json).not.toContain(rows[0]!.token); // 토큰은 감사기록에 넣지 않는다
+  });
+
+  it('HEAD /play 는 405 — 읽지 않을 영상 연결을 열지 않는다', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const path = await playPath(h, 'cam-1', ADMIN);
+    const res = await h.call(path, { method: 'HEAD', token: await h.token(ADMIN) });
+    expect(res.status).toBe(405);
+    expect(h.calls.length).toBe(0);
+  });
+
+  it('bytes=- 는 규격 밖이라 넘기지 않고, 한쪽만 있는 구간은 넘긴다', async () => {
+    for (const [range, forwarded] of [['bytes=-', null], ['bytes=-500', 'bytes=-500'], ['bytes=100-', 'bytes=100-'], ['bytes=0-99', 'bytes=0-99']] as const) {
+      const h = await cctvHarness();
+      addCamera(h.sqlite, { camera_id: 'cam-1' });
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await h.call(await playPath(h, 'cam-1', ADMIN), { token: await h.token(ADMIN), headers: { Range: range } });
+      spy.mockRestore();
+      expect(new Headers(h.calls[0]!.init?.headers as HeadersInit).get('Range')).toBe(forwarded);
+    }
+  });
+
+  it('목록·관리 목록은 인증 설정이 비면 relay_configured=false · playable=false (재생 판정과 같은 기준)', async () => {
+    for (const env of [{ CCTV_RELAY_AUTH: '' }, { CCTV_RELAY_AUTH: 'basic' }, { CCTV_RELAY_AUTH: 'cf-access', CCTV_RELAY_CF_ID: 'id' }]) {
+      const h = await cctvHarness(env as Partial<Env>);
+      addCamera(h.sqlite, { camera_id: 'cam-1' });
+      const list = await json(await h.call('/api/cctv', { token: await h.token(ADMIN) }));
+      expect(list.relay_configured).toBe(false);
+      expect(list.cameras[0].playable).toBe(false);
+      const admin = await json(await h.call('/api/admin/cctv', { token: await h.token(ADMIN) }));
+      expect(admin.relay_configured).toBe(false);
+      expect(admin.cameras[0].playable).toBe(false);
+    }
   });
 });

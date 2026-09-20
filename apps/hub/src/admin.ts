@@ -13,8 +13,9 @@ import {
   snapshotDiff,
   snapshotReplaceStmts,
 } from './groupsync';
-import { CAMERA_ID_RE, getCamera, listCameras, relayOrigin, isEnabled as isCctvEnabled, STREAM_KINDS, streamPathValidator, toView } from './cctv';
-import { ApiError, errorIncludes, jsonError } from './http';
+import { CAMERA_ID_RE, getCamera, listCameras, relayReady, isEnabled as isCctvEnabled, STREAM_KINDS, streamPathValidator, toView } from './cctv';
+import { requireHubAdmin } from './guard';
+import { ApiError, errorIncludes } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
 import { isEnabled as isTokenRefreshEnabled, tokenStatuses } from './tokens/refresh';
 import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
@@ -37,11 +38,8 @@ function sortNumber(v: unknown, field: string): number {
 export function adminRoutes() {
   const r = new Hono<HubEnv>();
 
-  // ADMIN 확인 (서버가 최종 판정)
-  r.use('*', async (c, next) => {
-    if (!c.get('principal').isHubAdmin) return jsonError(c, 403, 'forbidden', 'Administrator role required');
-    await next();
-  });
+  // ADMIN 확인 (서버가 최종 판정) — CCTV API 와 같은 관문
+  r.use('*', requireHubAdmin);
 
   r.get('/users', async (c) => {
     const db = c.env.DB;
@@ -355,12 +353,12 @@ export function adminRoutes() {
   // R3 CCTV 카메라 등록 (허브 자체 관리 입력 — 하위 앱·카메라에 쓰지 않는다).
   // 중계 서버 **안에서의 경로만** 받는다. 서버 주소·카메라 계정은 설정값·중계 서버 쪽에 있다.
   r.get('/cctv', async (c) => {
-    const relayReady = isCctvEnabled(c.env) && relayOrigin(c.env) !== null;
+    const ready = relayReady(c.env);
     const rows = await listCameras(c.env.DB);
     return c.json({
       enabled: isCctvEnabled(c.env),
-      relay_configured: relayReady,
-      cameras: rows.map((row) => ({ ...toView(row, relayReady), sort: row.sort, updated_at: row.updated_at })),
+      relay_configured: ready,
+      cameras: rows.map((row) => ({ ...toView(row, ready), sort: row.sort, updated_at: row.updated_at })),
     });
   });
 
@@ -418,8 +416,8 @@ export function adminRoutes() {
 
     const row = await getCamera(db, body.camera_id);
     if (row === null) throw new ApiError(500, 'internal_error', 'Internal error');
-    const relayReady = isCctvEnabled(c.env) && relayOrigin(c.env) !== null;
-    return c.json({ camera: toView(row, relayReady) }, before === null ? 201 : 200);
+    const ready = relayReady(c.env);
+    return c.json({ camera: toView(row, ready) }, before === null ? 201 : 200);
   });
 
   r.get('/audit', async (c) => {

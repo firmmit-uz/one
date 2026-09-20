@@ -200,10 +200,13 @@ function table(headers, rows, opts = {}) {
   }
   // 좁은 화면에서는 핵심 두 열만 두고 나머지는 행마다 펼쳐 본다 (열이 3개 이상일 때만)
   if (opts.stack && headers.length > 2) {
+    // 접혀도 보이는 열. 첫 열(이름)은 항상 남긴다 — 펼치기 단추가 거기 있다.
+    const keep = new Set([0, ...(Array.isArray(opts.keep) ? opts.keep : [1])]);
     for (const tr of rows) {
       const first = tr.children[0];
       if (!first) continue;
       tr.classList.add('is-collapsed');
+      [...tr.children].forEach((td, i) => { if (keep.has(i)) td.classList.add('col-keep'); });
       const toggle = el('button', {
         type: 'button',
         class: 'row-expand',
@@ -240,6 +243,7 @@ function collapsible(listEl, keep) {
   const total = listEl.children.length;
   if (total <= keep) return [listEl];
   listEl.classList.add('is-collapsed');
+  [...listEl.children].forEach((child, i) => { if (i >= keep) child.classList.add('more-item'); });
   const rest = total - keep;
   const btn = el('button', {
     type: 'button',
@@ -616,7 +620,7 @@ let cctvTimer = null;
 
 function stopCctv() {
   if (cctvTimer !== null) {
-    window.clearInterval(cctvTimer);
+    window.clearTimeout(cctvTimer);
     cctvTimer = null;
   }
 }
@@ -627,16 +631,20 @@ function cctvStateBadge(cam) {
   return badge('state-up', t('cctv_ready'), '✓');
 }
 
-function cctvPlayer(cam, onError) {
-  const src = `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`;
+// playPath 는 /open 이 돌려준 값(열람 토큰 포함)이다. 화면이 직접 주소를 만들지 않는다.
+function cctvPlayer(cam, playPath, onError) {
+  const src = playPath;
+  const bust = () => `${src}${src.includes('?') ? '&' : '?'}t=${Date.now()}`;
   if (cam.stream_kind === 'snapshot') {
-    const img = el('img', { class: 'cctv-media', alt: `${t('cctv_snapshot_alt')} — ${cam.name_ko}`, src: `${src}?t=${Date.now()}` });
-    img.addEventListener('error', onError);
+    const img = el('img', { class: 'cctv-media', alt: `${t('cctv_snapshot_alt')} — ${cam.name_ko}`, src: bust() });
     stopCctv();
-    cctvTimer = window.setInterval(() => {
+    // 앞 그림이 다 온 뒤에 다음을 청한다 — 회선이 느릴 때 요청이 겹쳐 쌓이지 않게
+    const next = () => {
       if (!img.isConnected) return stopCctv();
-      img.src = `${src}?t=${Date.now()}`;
-    }, SNAPSHOT_MS);
+      cctvTimer = window.setTimeout(() => { img.src = bust(); }, SNAPSHOT_MS);
+    };
+    img.addEventListener('load', next);
+    img.addEventListener('error', (e) => { stopCctv(); onError(e); });
     return img;
   }
   const video = el('video', { class: 'cctv-media', src, controls: true, autoplay: true, muted: true, playsinline: true });
@@ -681,8 +689,9 @@ async function viewCctv(main) {
       text: t('cctv_open'),
       onclick: async () => {
         open.disabled = true;
+        let opened;
         try {
-          await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
+          opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
         } catch (err) {
           open.disabled = false;
           put(stage, inlineError(err));
@@ -694,7 +703,7 @@ async function viewCctv(main) {
           el('div', { class: 'section-head' },
             el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
             el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
-          cctvPlayer(cam, fail));
+          cctvPlayer(cam, typeof opened.play_path === 'string' ? opened.play_path : `/api/cctv/${encodeURIComponent(cam.camera_id)}/play`, fail));
         stage.scrollIntoView({ block: 'nearest' });
       },
     });
@@ -713,7 +722,7 @@ async function viewCctv(main) {
     staleBanner(),
     stage,
     rows.length
-      ? table([t('cctv_col_name'), t('cctv_col_site'), t('cctv_col_kind'), t('cctv_col_state'), t('cctv_col_action')], rows, { label: t('cctv_title'), stack: true })
+      ? table([t('cctv_col_name'), t('cctv_col_site'), t('cctv_col_kind'), t('cctv_col_state'), t('cctv_col_action')], rows, { label: t('cctv_title'), stack: true, keep: [3, 4] })
       : el('p', { class: 'empty', text: t('cctv_empty') }),
     el('p', { class: 'note', text: t('cctv_audit_note') }),
   );
@@ -726,9 +735,74 @@ async function viewAdmin(main) {
   }
   const usersBox = el('section', { class: 'panel' });
   const tokenBox = el('section', { class: 'panel' });
+  const cctvBox = el('section', { class: 'panel' });
   const auditBox = el('section', { class: 'panel' });
-  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, tokenBox, auditBox);
-  await Promise.all([renderUsers(usersBox), renderTokens(tokenBox), renderAudit(auditBox)]);
+  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, tokenBox, cctvBox, auditBox);
+  await Promise.all([renderUsers(usersBox), renderTokens(tokenBox), renderCctvAdmin(cctvBox), renderAudit(auditBox)]);
+}
+
+// R3 CCTV: 카메라 등록. 중계 서버 **안에서의 경로만** 넣는다 — 서버 주소·카메라 계정은 여기 없다.
+async function renderCctvAdmin(box) {
+  put(box, sectionHead(t('cctv_admin_title')), loading());
+  let data;
+  try {
+    data = await api('/api/admin/cctv');
+  } catch (err) {
+    put(box, sectionHead(t('cctv_admin_title')), errorBox(err, () => renderCctvAdmin(box)));
+    return;
+  }
+  const reload = () => renderCctvAdmin(box);
+  const cams = Array.isArray(data.cameras) ? data.cameras : [];
+  const rows = cams.map((cam) =>
+    el('tr', {},
+      el('td', {}, el('code', { text: cam.camera_id })),
+      el('td', { text: cam.name_ko }),
+      el('td', { text: cam.site }),
+      el('td', { text: t(CCTV_KIND_KEY[cam.stream_kind] || 'cctv_kind_unknown') }),
+      el('td', {}, cctvStateBadge(cam)),
+      el('td', { class: 'num', text: String(cam.sort ?? 0) }),
+      el('td', { text: fmtTime(cam.updated_at) })),
+  );
+  put(box,
+    sectionHead(t('cctv_admin_title')),
+    el('p', { class: 'hint', text: t('cctv_admin_hint') }),
+    rows.length
+      ? table([t('cctv_col_id'), t('cctv_col_name'), t('cctv_col_site'), t('cctv_col_kind'), t('cctv_col_state'), t('cctv_col_sort'), t('cctv_col_updated')], rows, { label: t('cctv_admin_title'), stack: true, keep: [1, 4] })
+      : el('p', { class: 'empty', text: t('cctv_admin_empty') }),
+    el('div', { class: 'form-grid' }, addCameraForm(reload)),
+  );
+}
+
+function addCameraForm(reload) {
+  const id = el('input', { type: 'text', required: true, maxlength: '64', pattern: '[a-z0-9-]{2,64}', autocomplete: 'off' });
+  const name = el('input', { type: 'text', required: true, maxlength: '100' });
+  const site = el('input', { type: 'text', required: true, maxlength: '64' });
+  const kind = el('select', { required: true },
+    el('option', { value: 'snapshot', text: t('cctv_kind_snapshot') }),
+    el('option', { value: 'mp4', text: t('cctv_kind_mp4') }));
+  const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' });
+  const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', value: '0' });
+  const reason = el('input', { type: 'text', maxlength: '500' });
+  return formShell(
+    t('form_add_camera'),
+    [
+      field(t('field_camera_id'), id), field(t('field_camera_name'), name), field(t('field_site'), site),
+      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_sort'), sort),
+      field(t('field_reason'), reason),
+    ],
+    t('submit_add_camera'),
+    async () => {
+      // 경로를 비우면 null → 서버가 미연결로 저장한다 (상태를 따로 보내지 않는다)
+      const p = optionalText(path.value);
+      const body = { camera_id: id.value.trim(), name_ko: name.value.trim(), site: site.value.trim(), stream_kind: kind.value, stream_path: p ? p : null };
+      if (sort.value !== '') body.sort = Number(sort.value);
+      const r = optionalText(reason.value);
+      if (r) body.reason = r;
+      await api('/api/admin/cctv', { method: 'POST', body });
+      toast(t('saved'));
+      reload();
+    },
+  );
 }
 
 // WP3: 연동 토큰 상태. 토큰 값·암호문은 서버가 내려보내지 않는다.

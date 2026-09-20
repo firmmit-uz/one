@@ -15,7 +15,8 @@ export type Validator<T> = (value: unknown, field: string) => T;
 
 const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-const CONTROL_RE = /[\x00-\x1f\x7f]/;
+/** 제어문자(탭·개행 포함)는 어떤 입력에도 넣지 않는다. cctv.ts 도 이 규칙을 쓴다. */
+export const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
 export function str(opts: { min?: number; max: number; pattern?: RegExp }): Validator<string> {
   return (v, field) => {

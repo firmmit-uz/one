@@ -7,13 +7,18 @@
 //   3) 중계 서버 접속표(토큰)가 브라우저로 나가지 않는다.
 //   4) 영상 요청 하나하나가 허브의 인증·권한 검사를 지난다.
 //
-// fail-closed: 꺼져 있음·주소 미설정·자리표시자·알 수 없는 재생 방식·예상 밖 응답 형식 → 거부.
+// 열람 기록이 약속대로 남게 하는 법 (2단계)
+//   /open 이 감사기록과 **같은 batch** 로 열람 토큰을 남기고, /play 는 그 토큰(카메라·사람·만료에 묶임)이
+//   있어야만 연다. 화면의 호출 순서에 기대지 않는다.
+//
+// fail-closed: 꺼져 있음·주소 미설정·자리표시자·인증 설정 비어 있음·알 수 없는 재생 방식·예상 밖 응답 형식 → 거부.
 import { Hono } from 'hono';
 import type { HubEnv } from './app';
-import { appendAudit } from './audit';
+import { runAudited } from './audit';
 import type { Env } from './env';
-import { ApiError, jsonError } from './http';
-import { objectOf, readJsonBody, str, ValidationError } from './validate';
+import { requireHubAdmin } from './guard';
+import { ApiError } from './http';
+import { CONTROL_RE, objectOf, readJsonBody, str, ValidationError } from './validate';
 
 export const CAMERA_ID_RE = /^[a-z0-9-]{2,64}$/;
 export const STREAM_KINDS = ['mp4', 'snapshot'] as const;
@@ -30,17 +35,20 @@ export const ALLOWED_UPSTREAM_TYPES: Record<StreamKind, string> = {
 /** 브라우저로 그대로 넘기는 응답 머리말. 목록 밖은 버린다. */
 const PASS_RESPONSE_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
 
-const RANGE_RE = /^bytes=\d*-\d*$/;
-const CONTROL_RE = /[\x00-\x1f\x7f]/;
+// 구간 요청은 한쪽이라도 숫자가 있어야 한다. `bytes=-` 는 규격 밖이라 넘기지 않는다.
+const RANGE_RE = /^bytes=(\d+-\d*|-\d+)$/;
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 
+/** 열람 토큰 수명. 사진 새로고침·영상 구간 요청이 이 안에서 같은 토큰을 쓴다. 지나면 다시 연다. */
+export const VIEW_SESSION_TTL_MS = 15 * 60 * 1000;
+
 /**
  * 중계 서버에 자신을 밝히는 방법.
- *   none      : 밝히지 않는다 (중계 서버가 사내망에서만 열릴 때)
+ *   none      : 밝히지 않는다 (중계 서버가 사내망에서만 열릴 때) — **적어서 골라야** 한다
  *   basic     : 아이디·비밀번호 (go2rtc 등 중계 프로그램 자체의 인증)
  *   cf-access : Cloudflare Access 서비스 토큰 (Cloudflare 가 가장자리에서 먼저 막는다)
- * 목록 밖 값은 **설정 잘못**으로 보고 재생을 막는다.
+ * 목록 밖 값·빈 값은 **설정 잘못**으로 보고 재생을 막는다.
  */
 export const RELAY_AUTH_SCHEMES = ['none', 'basic', 'cf-access'] as const;
 export type RelayAuthScheme = (typeof RELAY_AUTH_SCHEMES)[number];
@@ -138,13 +146,23 @@ export function relayOrigin(env: Env): string | null {
   return u.origin;
 }
 
+/**
+ * 중계 서버를 실제로 부를 수 있는 상태인가 — 켜짐 · 주소 · 인증 설정 **셋 다**.
+ * 목록(`playable`)·관리 화면·재생 판정이 모두 이 하나를 본다. 화면이 "볼 수 있음" 이라 했는데
+ * 재생이 설정 오류로 막히는 어긋남이 여기서 없어진다.
+ */
+export function relayReady(env: Env): boolean {
+  return isEnabled(env) && relayOrigin(env) !== null && relayAuth(env).ok;
+}
+
 export function isStreamKind(v: unknown): v is StreamKind {
   return typeof v === 'string' && (STREAM_KINDS as readonly string[]).includes(v);
 }
 
 /**
  * 중계 서버 안에서의 경로 검사.
- * '/' 로 시작 · '//'(다른 서버로 새는 주소) 금지 · '..' 금지 · 역슬래시·제어문자 금지.
+ * '/' 로 시작 · '//'(다른 서버로 새는 주소) 금지 · '..' 금지 · 제어문자 금지.
+ * 역슬래시는 따로 막지 않는다 — URL 파서가 '/' 로 바꿔 되감기 검사에서 걸린다(겹치는 검사는 꺼져도 티가 나지 않는다).
  */
 export function isSafeStreamPath(v: unknown): v is string {
   if (typeof v !== 'string') return false;
@@ -152,7 +170,6 @@ export function isSafeStreamPath(v: unknown): v is string {
   if (!v.startsWith('/')) return false;
   if (v.startsWith('//')) return false;
   if (v.includes('..')) return false;
-  if (v.includes('\\')) return false;
   if (CONTROL_RE.test(v)) return false;
   // 되감기 검사: 합쳐 본 결과가 정말 그 서버 안인지 확인한다
   try {
@@ -192,11 +209,11 @@ export async function getCamera(db: D1Database, cameraId: string): Promise<Camer
  * 화면에 내보낼 모양으로 바꾼다. **경로·중계 서버 주소는 절대 넣지 않는다.**
  * 알 수 없는 값이 저장돼 있으면 볼 수 없음으로 내린다(조용히 재생하지 않는다).
  */
-export function toView(row: CameraRow, relayReady: boolean): CameraView {
+export function toView(row: CameraRow, ready: boolean): CameraView {
   const kind = isStreamKind(row.stream_kind) ? row.stream_kind : null;
   const status: CameraStatus = row.status === 'active' ? 'active' : 'not_connected';
   const playable =
-    relayReady && status === 'active' && kind !== null && isSafeStreamPath(row.stream_path); // MUTATION:CCTV-PLAYABLE
+    ready && status === 'active' && kind !== null && isSafeStreamPath(row.stream_path); // MUTATION:CCTV-PLAYABLE
   return { camera_id: row.camera_id, name_ko: row.name_ko, site: row.site, stream_kind: kind, status, playable };
 }
 
@@ -217,13 +234,8 @@ export function playTarget(env: Env, row: CameraRow): PlayCheck {
   return { ok: true, url: `${origin}${row.stream_path}`, kind: row.stream_kind, authHeaders: auth.headers };
 }
 
-const FAIL_STATUS: Record<Exclude<PlayCheck, { ok: true }>['code'], 409 | 404> = {
-  cctv_disabled: 409,
-  relay_not_configured: 409,
-  relay_auth_misconfigured: 409,
-  not_connected: 409,
-  unsupported_stream: 409,
-};
+// 재생 전 확인에 걸리면 전부 409 (상태가 맞지 않음). 404 는 카메라가 없을 때만 따로 낸다.
+const FAIL_STATUS = 409 as const;
 
 const FAIL_MESSAGE: Record<Exclude<PlayCheck, { ok: true }>['code'], string> = {
   cctv_disabled: 'CCTV viewing is disabled',
@@ -283,61 +295,98 @@ export async function proxyStream(
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }
 
+interface ViewSessionRow {
+  camera_id: string;
+  actor_email: string;
+  expires_at: string;
+}
+
 export function cctvRoutes(deps: CctvDeps) {
   const r = new Hono<HubEnv>();
 
-  // ADMIN 전용 (서버가 최종 판정). 화면이 숨기는 것과 별개로 여기서 막는다.
-  r.use('*', async (c, next) => {
-    if (!c.get('principal').isHubAdmin) return jsonError(c, 403, 'forbidden', 'Administrator role required');
-    await next();
-  });
+  // ADMIN 전용 (서버가 최종 판정). 관리 API 와 같은 관문을 쓴다.
+  r.use('*', requireHubAdmin);
 
   // 목록: 경로·중계 서버 주소는 내보내지 않는다
   r.get('/', async (c) => {
-    const enabled = isEnabled(c.env);
-    const relayReady = enabled && relayOrigin(c.env) !== null;
+    const ready = relayReady(c.env);
     const rows = await listCameras(c.env.DB);
     return c.json({
-      enabled,
-      relay_configured: relayReady,
-      cameras: rows.map((row) => toView(row, relayReady)),
+      enabled: isEnabled(c.env),
+      relay_configured: ready,
+      cameras: rows.map((row) => toView(row, ready)),
     });
   });
 
-  // 열람 시작: 감사기록 1건. 화면은 이 응답을 받은 뒤에만 재생을 건다.
+  // 열람 시작: 감사기록 1건 + 열람 토큰을 **한 batch** 로. 화면은 돌려받은 play_path 로만 재생을 건다.
   r.post('/:camera_id/open', async (c) => {
     const id = cameraIdParam(c.req.param('camera_id'));
     // 본문은 사유만 받는다 (모르는 필드는 거부)
     const body = objectOf({ reason: { v: str({ max: 500 }), optional: true } })(await readJsonBody(c.req.raw), '');
-    const row = await getCamera(c.env.DB, id);
+    const db = c.env.DB;
+    const row = await getCamera(db, id);
     if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
     const target = playTarget(c.env, row);
-    if (!target.ok) throw new ApiError(FAIL_STATUS[target.code], target.code, FAIL_MESSAGE[target.code]);
-    const now = c.get('now').toISOString();
-    await appendAudit(c.env.DB, {
-      ts: now,
-      actor_email: c.get('principal').email,
-      action: 'cctv_view_open',
-      target: `camera:${id}`,
-      // 주소·경로는 기록하지 않는다 (감사기록은 오래 남는다)
-      detail: { site: row.site, stream_kind: target.kind, reason: body.reason ?? null },
-      request_id: c.get('requestId'),
+    if (!target.ok) throw new ApiError(FAIL_STATUS, target.code, FAIL_MESSAGE[target.code]);
+    const nowDate = c.get('now');
+    const now = nowDate.toISOString();
+    const expires = new Date(nowDate.getTime() + VIEW_SESSION_TTL_MS).toISOString();
+    const actor = c.get('principal').email;
+    const token = crypto.randomUUID();
+    await runAudited(db, async () => ({
+      stmts: [
+        // 지난 토큰은 여기서 함께 치운다 (따로 크론을 두지 않는다)
+        db.prepare('DELETE FROM cctv_view_sessions WHERE expires_at <= ?').bind(now),
+        db
+          .prepare('INSERT INTO cctv_view_sessions (token, camera_id, actor_email, opened_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+          .bind(token, id, actor, now, expires),
+      ],
+      entry: {
+        ts: now,
+        actor_email: actor,
+        action: 'cctv_view_open',
+        target: `camera:${id}`,
+        // 주소·경로·토큰은 기록하지 않는다 (감사기록은 오래 남는다)
+        detail: { site: row.site, stream_kind: target.kind, reason: body.reason ?? null, expires_at: expires },
+        request_id: c.get('requestId'),
+      },
+    }));
+    return c.json({
+      camera_id: id,
+      stream_kind: target.kind,
+      play_path: `/api/cctv/${id}/play?s=${token}`,
+      opened_at: now,
+      expires_at: expires,
     });
-    return c.json({ camera_id: id, stream_kind: target.kind, play_path: `/api/cctv/${id}/play`, opened_at: now });
   });
 
   // 영상 전달. 조각 요청마다 감사기록을 남기면 체인이 넘치므로 구조화 로그만 남긴다.
   r.get('/:camera_id/play', async (c) => {
+    // Hono 는 HEAD 를 GET 처리기로 보내고 본문을 버린다 → 아무도 읽지 않을 영상 연결이 열린다. GET 만 받는다.
+    if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');
     const id = cameraIdParam(c.req.param('camera_id'));
     const row = await getCamera(c.env.DB, id);
     if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
     const target = playTarget(c.env, row);
-    if (!target.ok) throw new ApiError(FAIL_STATUS[target.code], target.code, FAIL_MESSAGE[target.code]);
+    if (!target.ok) throw new ApiError(FAIL_STATUS, target.code, FAIL_MESSAGE[target.code]);
+
+    // 열람 토큰: /open 이 남긴 것이어야 하고, 같은 카메라·같은 사람·만료 전이어야 한다.
+    const token = c.req.query('s') ?? '';
+    const sess = await c.env.DB
+      .prepare('SELECT camera_id, actor_email, expires_at FROM cctv_view_sessions WHERE token = ?')
+      .bind(token)
+      .first<ViewSessionRow>();
+    const nowIso = c.get('now').toISOString();
+    const actor = c.get('principal').email;
+    if (sess === null || sess.camera_id !== id || sess.actor_email !== actor || sess.expires_at <= nowIso) { // MUTATION:CCTV-VIEW-SESSION
+      throw new ApiError(409, 'view_not_opened', 'Open the camera first');
+    }
+
     console.log(
       JSON.stringify({
         event: 'cctv_stream',
         request_id: c.get('requestId'),
-        actor: c.get('principal').email,
+        actor,
         camera_id: id,
         stream_kind: target.kind,
       }),

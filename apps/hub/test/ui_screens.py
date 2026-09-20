@@ -180,6 +180,44 @@ def flow_cctv_play(browser, base):
     report["failures"] += [f"cctv_play_flow: {p}" for p in probs]
 
 
+def flow_cctv_mobile_actions(browser, base):
+    """CCTV 390px: 접힌 표에서도 상태 배지와 '영상 보기' 단추가 보여야 한다 (B단계 회귀 방지)."""
+    ctx = browser.new_context(viewport={"width": 390, "height": 844})
+    ctx.set_extra_http_headers({"x-test-as": "admin"})
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.goto(f"{base}/#/cctv")
+    page.wait_for_selector("table tbody tr")
+    row = page.locator("tr", has_text="이천 재배동")
+    btn = row.get_by_role("button", name="영상 보기")
+    badge = row.locator(".badge")
+    visible = {"button": btn.is_visible(), "badge": badge.first.is_visible(),
+               "hidden_cells": row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")}
+    # 펼치면 나머지 열이 나온다
+    row.get_by_role("button", name="자세히 보기").click()
+    expanded_hidden = row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")
+    overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    ctx.close()
+    probs = []
+    if not visible["button"]:
+        probs.append("'영상 보기' button hidden on 390px")
+    if not visible["badge"]:
+        probs.append("state badge hidden on 390px")
+    if visible["hidden_cells"] == 0:
+        probs.append("nothing collapsed on 390px (expected 시설·방식 hidden)")
+    if expanded_hidden != 0:
+        probs.append(f"{expanded_hidden} cells still hidden after expand")
+    if overflow > 0:
+        probs.append(f"horizontal overflow {overflow}px")
+    if errors:
+        probs.append(f"console errors {errors}")
+    report["flows"].append({"name": "cctv_mobile_actions", "visible": visible, "expanded_hidden": expanded_hidden, "overflow": overflow,
+                            "console_errors": errors, "problems": probs})
+    report["failures"] += [f"cctv_mobile_actions: {p}" for p in probs]
+
+
 def flow_revoke(browser, base):
     """관리 화면에서 회수 → 확인 → 목록 갱신, 키보드 포커스 표시 확인."""
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
@@ -303,6 +341,7 @@ def main():
                   expect=lambda p, c: ([] if p.locator(".alert-warn").count() >= 1 else ["cctv off notice missing"])
                   + ([] if p.locator("button:disabled").count() == 3 else ["cameras should not be playable when off"]))
             flow_cctv_play(browser, base)
+            flow_cctv_mobile_actions(browser, base)
             flow_revoke(browser, base)
             browser.close()
     finally:

@@ -463,7 +463,7 @@
     {
       "name": "cctv_play_flow",
       "image": {
-        "src": "/api/cctv/icheon-vfarm/play?t=1789900329100",
+        "src": "/api/cctv/icheon-vfarm/play?s=9a3f7312-4015-4f03-8da4-fa631b9127cd&t=1789902386901",
         "w": 640,
         "h": 360,
         "origin": "http://127.0.0.1:8801"
@@ -473,6 +473,18 @@
         "target": "camera:icheon-vfarm"
       },
       "external_requests": [],
+      "console_errors": [],
+      "problems": []
+    },
+    {
+      "name": "cctv_mobile_actions",
+      "visible": {
+        "button": true,
+        "badge": true,
+        "hidden_cells": 2
+      },
+      "expanded_hidden": 0,
+      "overflow": 0,
       "console_errors": [],
       "problems": []
     },

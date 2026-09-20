@@ -21,7 +21,7 @@ const MUTANTS = [
   ['authz: 그룹 상한 무시 끔', 'src/authz.ts', "if (rank > ceiling) return 'over_ceiling';", ''],
   ['authz: 사본 30분 쓰기 제한 끔', 'src/app.ts', '!canWrite(p)', 'false'],
   ['csrf: Origin 확인 끔', 'src/app.ts', "if (c.req.header('Origin') !== allowed)", 'if (false)'],
-  ['admin: ADMIN 확인 끔', 'src/admin.ts', "if (!c.get('principal').isHubAdmin)", 'if (false)'],
+  ['admin·cctv 공용 관문: ADMIN 확인 끔', 'src/guard.ts', "if (!c.get('principal').isHubAdmin)", 'if (false)'],
   // WP1
   ['groupsync: 허용 목록 검사 끔', 'src/groupsync.ts', /^.*\/\/ MUTATION:ALLOWLIST\n/m, ''],
   ['groupsync: 알 수 없는 규칙 검사 끔', 'src/groupsync.ts', /^.*\/\/ MUTATION:UNKNOWN-RULE\n/m, ''],
@@ -84,7 +84,6 @@ const MUTANTS = [
   ['tokens: 차단 규칙 제거', 'src/tokens/refresh.ts', '  if (block !== null) {', '  if (false && block !== null) {'],
   ['tokens: 기본 꺼짐 무시', 'src/tokens/refresh.ts', "return env.TOKEN_REFRESH_ENABLED === 'true';", "return env.TOKEN_REFRESH_ENABLED !== 'true';"],
   // R3 CCTV
-  ['cctv: ADMIN 확인 끔', 'src/cctv.ts', "if (!c.get('principal').isHubAdmin)", 'if (false)'],
   ['cctv: 기본 꺼짐 무시', 'src/cctv.ts', "return env.CCTV_ENABLED === 'true';", "return env.CCTV_ENABLED !== 'true';"],
   ['cctv: 경로 되감기 검사 끔 (조각·인코딩 우회)', 'src/cctv.ts', "return u.origin === 'https://relay.invalid' && `${u.pathname}${u.search}` === v;", 'return true;'],
   ["cctv: 경로 '..' 검사 끔", 'src/cctv.ts', "if (v.includes('..')) return false;", ''],
@@ -94,6 +93,14 @@ const MUTANTS = [
   ['cctv: 인증 방법이 비어도 익명으로 부름', 'src/cctv.ts', "if (typeof raw !== 'string' || raw.trim() === '') return { ok: false };", "if (typeof raw !== 'string' || raw.trim() === '') return { ok: true, headers: [] };"],
   ['cctv: 중계 서버로 자동 따라가기 허용(workerd 거부값)', 'src/cctv.ts', "redirect: 'manual'", "redirect: 'follow'"],
   ['cctv: 중계 서버 요청에서 no-cache 제거', 'src/cctv.ts', "  headers.set('Cache-Control', 'no-cache');\n", ''],
+  ['cctv: https 외 주소 허용', 'src/cctv.ts', "if (u.protocol !== 'https:') return null;", ''],
+  ['cctv: 주소에 사용자정보 허용', 'src/cctv.ts', "if (u.username !== '' || u.password !== '') return null;", ''],
+  ['cctv: 주소에 경로·질의·조각 허용', 'src/cctv.ts', "if (u.pathname !== '/' || u.search !== '' || u.hash !== '') return null;", ''],
+  ['cctv: Range 목록 검사 끔', 'src/cctv.ts', "if (range !== null && RANGE_RE.test(range)) headers.set('Range', range);", "if (range !== null) headers.set('Range', range);"],
+  ["cctv: basic 아이디에 ':' 허용", 'src/cctv.ts', "!CRED_RE.test(user) || user.includes(':')", "!CRED_RE.test(user)"],
+  ['cctv: 준비 판정에서 인증 설정 무시', 'src/cctv.ts', "return isEnabled(env) && relayOrigin(env) !== null && relayAuth(env).ok;", "return isEnabled(env) && relayOrigin(env) !== null;"],
+  ['cctv: 열람 토큰 없이 재생 허용', 'src/cctv.ts', /^.*\/\/ MUTATION:CCTV-VIEW-SESSION\n.*\n.*\n/m, ''],
+  ['cctv: HEAD 로 영상 연결 열기 허용', 'src/cctv.ts', "if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');", ''],
   ['cctv: 중계 서버 응답 형식 확인 끔', 'src/cctv.ts', 'if (ct !== ALLOWED_UPSTREAM_TYPES[target.kind]) {', 'if (false) {'],
   ['cctv: 중계 서버 응답 코드 확인 끔', 'src/cctv.ts', 'if (upstream.status !== 200 && upstream.status !== 206) {', 'if (false) {'],
   [

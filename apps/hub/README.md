@@ -62,7 +62,7 @@ apps/hub/
 | `POST /api/admin/phase0/:item_id` | Access | 허브 ADMIN | `{state: pending\|passed\|failed\|na, evidence_ref?, reason?}`. `passed`는 증적 참조 필수, 증적에 주소·이메일·비밀값 형태 금지 |
 | `GET /api/cctv` | Access | 허브 ADMIN | 카메라 목록. **중계 서버 주소·경로는 응답에 없음** |
 | `POST /api/cctv/:camera_id/open` | Access | 허브 ADMIN | 열람 시작 `{reason?}` → 감사기록 1건 + `play_path` |
-| `GET /api/cctv/:camera_id/play` | Access | 허브 ADMIN | 영상을 **같은 출처로 전달**. 형식이 `video/mp4`·`image/jpeg` 가 아니면 502 |
+| `GET /api/cctv/:camera_id/play?s=<열람 토큰>` | Access | 허브 ADMIN | 영상을 **같은 출처로 전달**. `/open` 이 준 열람 토큰(같은 카메라·같은 사람·15분)이 없으면 409 `view_not_opened`. 형식이 `video/mp4`·`image/jpeg` 가 아니면 502. GET 만 (HEAD 는 405) |
 | `GET /api/admin/cctv` | Access | 허브 ADMIN | 카메라 목록(관리용, 정렬·갱신 시각 포함) |
 | `POST /api/admin/cctv` | Access | 허브 ADMIN | 카메라 등록·수정 `{camera_id, name_ko, site, stream_kind, stream_path\|null, sort?, reason?}` |
 | `GET /api/admin/audit?limit=&before=` | Access | 허브 ADMIN | 감사기록 (최대 500) |
