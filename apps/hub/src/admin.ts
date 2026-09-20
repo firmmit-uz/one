@@ -351,7 +351,7 @@ export function adminRoutes() {
     return c.json({
       enabled: l.enabled,
       relay_configured: l.relay_configured,
-      cameras: l.views.map((v, i) => ({ ...v, sort: l.rows[i]!.sort, updated_at: l.rows[i]!.updated_at })),
+      cameras: l.rows.map((row) => ({ ...toView(row, l.relay_configured), sort: row.sort, updated_at: row.updated_at })),
     });
   });
 
@@ -372,12 +372,11 @@ export function adminRoutes() {
     const now = c.get('now').toISOString();
     const actor = c.get('principal').email;
     // 이전 상태는 batch 를 준비할 때마다 읽는다 — runAudited 가 재시도하면 다시 읽으므로 감사기록이 묵은 값을 담지 않는다
-    // 닫힌 함수 안의 대입은 TS 흐름 분석이 따라오지 못하므로 객체 속성으로 들고 있는다
-    const seen: { before: Awaited<ReturnType<typeof getCamera>>; sort: number; stream_path: string | null; status: 'active' | 'not_connected' } = { before: null, sort: 0, stream_path: null, status: 'not_connected' };
-
-    await runAudited(db, async () => {
+    // 저장할 행을 한 번 계산해, 문장(bind)과 응답이 **같은 값**을 쓴다. runAudited 가 재시도하면 다시 계산한다.
+    // (닫힌 함수 안의 대입은 TS 흐름 분석이 따라오지 못하므로 결과를 담는 자리 하나만 둔다)
+    const resolved: { before: Awaited<ReturnType<typeof getCamera>>; row: Parameters<typeof toView>[0] | null } = { before: null, row: null };
+    const resolveCameraWrite = async () => {
       const before = await getCamera(db, body.camera_id);
-      const sort = body.sort ?? before?.sort ?? 0;
       // 경로: 보낸 값 > 이전 값 > 없음. 상태는 경로에서만 정한다 — 따로 받지 않아 어긋날 수 없다
       // 단, 재생 방식이 바뀌는데 경로를 빼면 거부한다 — 옛 경로(예: .mp4)를 새 방식(사진)에 물려주면
       // 목록은 "볼 수 있음" 인데 재생은 형식 불일치로 늘 막히는 어긋남이 생긴다.
@@ -385,11 +384,25 @@ export function adminRoutes() {
         throw new ValidationError('stream_path_required', 'stream_path');
       }
       const stream_path: string | null = body.stream_path === undefined ? (before?.stream_path ?? null) : body.stream_path;
-      const status = stream_path === null ? 'not_connected' : 'active';
-      seen.before = before;
-      seen.sort = sort;
-      seen.stream_path = stream_path;
-      seen.status = status;
+      const row = {
+        camera_id: body.camera_id,
+        name_ko: body.name_ko,
+        site: body.site,
+        stream_kind: body.stream_kind,
+        stream_path,
+        status: stream_path === null ? 'not_connected' : 'active',
+        sort: body.sort ?? before?.sort ?? 0,
+        created_at: before?.created_at ?? now,
+        updated_at: now,
+      };
+      resolved.before = before;
+      resolved.row = row;
+      return { before, row };
+    };
+
+    await runAudited(db, async () => {
+      const { before, row } = await resolveCameraWrite();
+      const { stream_path, status, sort } = row;
       return {
       stmts: [
         db
@@ -401,7 +414,7 @@ export function adminRoutes() {
                stream_path = excluded.stream_path, status = excluded.status, sort = excluded.sort,
                updated_at = excluded.updated_at`,
           )
-          .bind(body.camera_id, body.name_ko, body.site, body.stream_kind, stream_path, status, sort, before?.created_at ?? now, now),
+          .bind(row.camera_id, row.name_ko, row.site, row.stream_kind, row.stream_path, row.status, row.sort, row.created_at, row.updated_at),
       ],
       entry: {
         ts: now,
@@ -423,19 +436,9 @@ export function adminRoutes() {
       };
     });
 
-    // 응답은 방금 저장한 값으로 만든다 — 다시 읽으면 왕복이 하나 늘고, 그 사이 다른 저장이 끼면 남의 결과를 돌려준다
-    const saved = {
-      camera_id: body.camera_id,
-      name_ko: body.name_ko,
-      site: body.site,
-      stream_kind: body.stream_kind,
-      stream_path: seen.stream_path,
-      status: seen.status,
-      sort: seen.sort,
-      created_at: seen.before?.created_at ?? now,
-      updated_at: now,
-    };
-    return c.json({ camera: toView(saved, relayReady(c.env)) }, seen.before === null ? 201 : 200);
+    // 응답은 방금 저장한 바로 그 행으로 만든다 — 다시 읽으면 왕복이 하나 늘고, 그 사이 다른 저장이 끼면 남의 결과를 돌려준다
+    if (resolved.row === null) throw new ApiError(500, 'internal_error', 'Internal error');
+    return c.json({ camera: toView(resolved.row, relayReady(c.env)) }, resolved.before === null ? 201 : 200);
   });
 
   r.get('/audit', async (c) => {

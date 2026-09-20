@@ -58,6 +58,7 @@ export function withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number
   const reader = body.getReader();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stalled = false;
+  let cancelled = false;
   let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
   const stall = () => {
     stalled = true;
@@ -82,11 +83,12 @@ export function withIdleTimeout(body: ReadableStream<Uint8Array>, idleMs: number
       }
       if (timer !== null) clearTimeout(timer);
       timer = null;
-      if (stalled) return; // stall() 이 이미 오류로 끝냈다
+      if (stalled || cancelled) return; // 이미 오류로 끝냈거나 소비자가 먼저 취소했다 — 닫힌 스트림에 close 를 부르지 않는다
       if (r.done) controller.close();
       else controller.enqueue(r.value);
     },
     cancel(reason) {
+      cancelled = true;
       if (timer !== null) clearTimeout(timer);
       return reader.cancel(reason);
     },
@@ -206,8 +208,20 @@ export function relayOrigin(env: Env): string | null {
  * 목록(`playable`)·관리 화면·재생 판정이 모두 이 하나를 본다. 화면이 "볼 수 있음" 이라 했는데
  * 재생이 설정 오류로 막히는 어긋남이 여기서 없어진다.
  */
+export type RelayFail = 'cctv_disabled' | 'relay_not_configured' | 'relay_auth_misconfigured';
+
+/** 중계 서버 쪽 준비 검사 — 켜짐 → 주소 → 인증 차례. 실패하면 그 이유를 돌려준다. */
+export function relayCheck(env: Env): { ok: true; origin: string; authHeaders: [string, string][] } | { ok: false; code: RelayFail } {
+  if (!isEnabled(env)) return { ok: false, code: 'cctv_disabled' };
+  const origin = relayOrigin(env);
+  if (origin === null) return { ok: false, code: 'relay_not_configured' };
+  const auth = relayAuth(env);
+  if (!auth.ok) return { ok: false, code: 'relay_auth_misconfigured' };
+  return { ok: true, origin, authHeaders: auth.headers };
+}
+
 export function relayReady(env: Env): boolean {
-  return isEnabled(env) && relayOrigin(env) !== null && relayAuth(env).ok;
+  return relayCheck(env).ok;
 }
 
 export function isStreamKind(v: unknown): v is StreamKind {
@@ -285,15 +299,13 @@ export type PlayCheck =
 
 /** 재생 전 확인 한 군데. 화면·프록시 모두 이 결과만 믿는다. */
 export function playTarget(env: Env, row: CameraRow): PlayCheck {
-  if (!isEnabled(env)) return { ok: false, code: 'cctv_disabled' };
-  const origin = relayOrigin(env);
-  if (origin === null) return { ok: false, code: 'relay_not_configured' };
+  // 중계 서버 쪽(켜짐·주소·인증)은 relayCheck 한 곳 — 목록의 relay_configured 와 같은 판정·같은 차례
+  const relay = relayCheck(env);
+  if (!relay.ok) return { ok: false, code: relay.code };
   if (row.status !== 'active') return { ok: false, code: 'not_connected' };
   if (!isStreamKind(row.stream_kind)) return { ok: false, code: 'unsupported_stream' };
   if (!isSafeStreamPath(row.stream_path)) return { ok: false, code: 'unsupported_stream' };
-  const auth = relayAuth(env);
-  if (!auth.ok) return { ok: false, code: 'relay_auth_misconfigured' };
-  return { ok: true, url: `${origin}${row.stream_path}`, kind: row.stream_kind, authHeaders: auth.headers };
+  return { ok: true, url: `${relay.origin}${row.stream_path}`, kind: row.stream_kind, authHeaders: relay.authHeaders };
 }
 
 // 재생 전 확인에 걸리면 전부 409 (상태가 맞지 않음). 404 는 카메라가 없을 때만 따로 낸다.
@@ -370,9 +382,15 @@ export async function proxyStream(
   // 영상은 저장하지 않는다 (공통 미들웨어가 다시 no-store 를 씌우지만 여기서도 명시)
   out.set('Cache-Control', 'no-store');
   out.set('X-Content-Type-Options', 'nosniff');
-  // 머리말은 왔는데 몸통이 멈추면 끊는다 — 브라우저가 error 를 받아 다시 청하거나 안내를 낸다
-  const body = upstream.body === null ? null : withIdleTimeout(upstream.body, deps.idleTimeoutMs ?? IDLE_TIMEOUT_MS, () => ctl.abort()); // MUTATION:CCTV-IDLE
+  // 머리말은 왔는데 몸통이 멈추면 끊는다 — 브라우저가 error 를 받아 다시 청하거나 안내를 낸다.
+  // 스트림이 몇 시간 살아도 접속표가 든 headers 등 이 함수의 지역을 붙들지 않도록, 끊는 함수만 따로 만든다.
+  const body = upstream.body === null ? null : withIdleTimeout(upstream.body, deps.idleTimeoutMs ?? IDLE_TIMEOUT_MS, abortOf(ctl)); // MUTATION:CCTV-IDLE
   return new Response(body, { status: upstream.status, headers: out });
+}
+
+/** ctl 만 붙드는 작은 클로저 — proxyStream 의 나머지 지역이 스트림 수명만큼 살아남지 않게 한다. */
+function abortOf(ctl: AbortController): () => void {
+  return () => ctl.abort();
 }
 
 interface ViewSessionRow {

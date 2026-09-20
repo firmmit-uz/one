@@ -23,7 +23,6 @@ export const DICT = {
     cctv_empty: '등록된 카메라가 없습니다. 관리 화면에서 등록합니다.',
     cctv_open: '영상 보기',
     cctv_close: '닫기',
-    cctv_playing: '재생 중',
     cctv_not_connected: '미연결',
     cctv_unusable: '설정 확인 필요',
     cctv_ready: '볼 수 있음',

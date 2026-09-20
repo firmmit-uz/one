@@ -624,6 +624,9 @@ const SNAPSHOT_MS = 2000;
 // 한 번에 재생기 하나. 현재 재생기의 정지 함수만 들고 있다 — 떼어낸 옛 재생기의 이벤트가 새 재생기를 건드리지 못하게.
 let cctvStop = null;
 let cctvReopenTimer = null;
+// 열기 흐름의 세대 번호. 새 카메라를 열면 올라가고, 옛 흐름은 자기 번호가 아니면 아무것도 하지 않는다
+// (늦게 돌아온 /open 이나 옛 예약이 지금 보는 카메라를 덮거나 타이머를 훔치지 못하게).
+let cctvGen = 0;
 
 function stopCctv() {
   if (cctvReopenTimer !== null) {
@@ -710,19 +713,20 @@ async function viewCctv(main) {
       text: t('cctv_open'),
       onclick: async () => {
         open.disabled = true;
+        const gen = ++cctvGen;
         let opened;
         try {
           opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
         } catch (err) {
           open.disabled = false;
-          if (!stage.isConnected) return;
+          if (!stage.isConnected || gen !== cctvGen) return;
           stopCctv(); // 보고 있던 다른 카메라가 있으면 먼저 끊는다 — 무대만 갈아엎으면 스트림이 살아남는다
           put(stage, inlineError(err));
           return;
         }
         open.disabled = false;
-        // 기다리는 동안 화면을 떠났으면 시작하지 않는다 — 떼어진 <video> 도 자동재생으로 중계 연결을 연다
-        if (!stage.isConnected) return;
+        // 기다리는 동안 화면을 떠났거나 다른 카메라를 열었으면 시작하지 않는다 — 떼어진 <video> 도 자동재생으로 중계 연결을 연다
+        if (!stage.isConnected || gen !== cctvGen) return;
         if (typeof opened.play_path !== 'string') {
           // 토큰 없는 경로는 서버가 반드시 거부한다 → 재생 실패로 위장하지 않고 응답 형식 오류로 알린다
           stopCctv();
@@ -742,7 +746,7 @@ async function viewCctv(main) {
         let retries = 0;
         let reopenedOnFail = false;
         let closed = false; // 닫기를 눌렀으면 기다리던 /open 이 돌아와도 다시 끼워 넣지 않는다
-        const alive = () => stage.isConnected && !closed;
+        const alive = () => stage.isConnected && !closed && gen === cctvGen;
         // 예약 타이머는 한 개만 — 새로 걸기 전에 반드시 지운다 (지우지 않으면 닫은 뒤에도 옛 예약이 살아 다시 연다)
         const armTimer = (fn, ms) => {
           if (cctvReopenTimer !== null) window.clearTimeout(cctvReopenTimer);
