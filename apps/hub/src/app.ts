@@ -10,6 +10,7 @@ import { ValidationError } from './validate';
 import { canSeeApp, listApps, toLauncherItem } from './apps';
 import type { UptimeRow } from './uptime';
 import { adminRoutes } from './admin';
+import { cctvRoutes } from './cctv';
 import { kpiRoutes } from './kpi/routes';
 
 export type Vars = {
@@ -25,6 +26,12 @@ export type HubContext = Context<HubEnv>;
 export interface AppDeps {
   jwks?: JwksProvider;
   now?: () => Date;
+  /** CCTV 중계 서버 호출 (시험에서는 가짜 서버를 넣는다) */
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** CCTV 전달 중 몸통이 이만큼 멈추면 끊는다 (시험에서만 줄인다) */
+  cctvIdleTimeoutMs?: number;
+  /** CCTV 중계 서버가 머리말을 이만큼 안 주면 끊는다 (시험에서만 줄인다) */
+  cctvConnectTimeoutMs?: number;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
@@ -46,6 +53,7 @@ const DENY_MESSAGES: Record<string, string> = {
 export function createApp(deps: AppDeps = {}) {
   const jwks = deps.jwks ?? remoteJwks;
   const clock = deps.now ?? (() => new Date());
+  const doFetch = deps.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init));
   const app = new Hono<HubEnv>();
 
   // 공통: 요청 ID, 보안 헤더, 캐시 금지
@@ -177,6 +185,11 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.route('/api/kpi', kpiRoutes());
+  app.route('/api/cctv', cctvRoutes({
+    fetch: doFetch,
+    ...(deps.cctvIdleTimeoutMs !== undefined ? { idleTimeoutMs: deps.cctvIdleTimeoutMs } : {}),
+    ...(deps.cctvConnectTimeoutMs !== undefined ? { connectTimeoutMs: deps.cctvConnectTimeoutMs } : {}),
+  }));
   app.route('/api/admin', adminRoutes());
 
   app.notFound((c) => jsonError(c, 404, 'not_found', 'Not found'));

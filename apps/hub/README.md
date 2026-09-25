@@ -60,6 +60,11 @@ apps/hub/
 | `GET /api/admin/tokens` | Access | 허브 ADMIN | 연동 토큰 **상태만**(값·암호문 미포함) + 자동 갱신 켜짐 여부 |
 | `GET /api/admin/phase0` | Access | 허브 ADMIN | 게이트 G1 체크리스트 14개 + 통과 수 |
 | `POST /api/admin/phase0/:item_id` | Access | 허브 ADMIN | `{state: pending\|passed\|failed\|na, evidence_ref?, reason?}`. `passed`는 증적 참조 필수, 증적에 주소·이메일·비밀값 형태 금지 |
+| `GET /api/cctv` | Access | 허브 ADMIN | 카메라 목록. **중계 서버 주소·경로는 응답에 없음** |
+| `POST /api/cctv/:camera_id/open` | Access | 허브 ADMIN | 열람 시작 `{reason?}` → 감사기록 1건 + `play_path` |
+| `GET /api/cctv/:camera_id/play?s=<열람 토큰>` | Access | 허브 ADMIN | 영상을 **같은 출처로 전달**. `/open` 이 준 열람 토큰(같은 카메라·같은 사람·15분)이 없으면 409 `view_not_opened`. 형식이 `video/mp4`·`image/jpeg` 가 아니면 502. GET 만 (HEAD 는 405) |
+| `GET /api/admin/cctv` | Access | 허브 ADMIN | 카메라 목록(관리용, 정렬·갱신 시각 포함) |
+| `POST /api/admin/cctv` | Access | 허브 ADMIN | 카메라 등록·수정 `{camera_id, name_ko, site, stream_kind, stream_path\|null, sort?, reason?}` |
 | `GET /api/admin/audit?limit=&before=` | Access | 허브 ADMIN | 감사기록 (최대 500) |
 | `GET /api/admin/audit/verify` | Access | 허브 ADMIN | 해시 체인 점검 `{ok, checked, broken_at_id?, reason?}` |
 
@@ -213,7 +218,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 
 ### 4.1 Cron 계획과 계정 한도
 
-현재 `wrangler.jsonc` 의 `triggers.crons` = `["*/5 * * * *", "*/15 * * * *"]`.
+현재 `wrangler.jsonc` 의 `triggers.crons` = `["*/5 * * * *", "*/15 * * * *", "0 * * * *"]`.
 
 | 상태 | 주기 | 내용 |
 |---|---|---|
@@ -244,6 +249,139 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 다음 실행이 아예 시작하지 않는다(새 토큰을 덮어쓰지 않기 위해서다). 해제는 **관리자 재인증**(최초 인증과 같은 동의 절차) 뒤에만 가능하며,
 **재인증 기능은 이번 범위 밖**이다 — 그 상태가 되면 선기록의 암호문을 근거로 사람이 복구 절차를 밟는다.
 
+### 4.3 CCTV 보기를 켜기 전 조건 (R3 1단계)
+
+`CCTV_ENABLED` 기본값은 `"false"` 다. **아래가 모두 끝나기 전에는 켜지 않는다.**
+
+허브는 카메라에 직접 붙지 않는다. 구조는 이렇다:
+
+```
+[카메라] --RTSP(같은 사내망)--> [중계 PC] --Cloudflare Tunnel--> [허브 Worker] --같은 출처--> [브라우저]
+                                   └ 카메라 계정·비밀번호는 여기에만 있다
+```
+
+**중계 PC 는 카메라와 같은 사내망(같은 공유기) 안에 있어야 한다.** Tapo 의 RTSP 는 같은 망에서만 열린다.
+보는 사람은 어디에 있어도 된다 — 허브를 거치기 때문이다. 시설이 여러 곳이면 **시설마다 중계 PC 1대씩** 필요하다.
+
+**이번 대상 (FIRMMIT 확인, 2026-09-19)**
+
+| 항목 | 값 |
+|---|---|
+| 카메라가 있는 곳 | **AKIS 온실** — Toshkent viloyati, Yuqori Chirchiq tumani |
+| 중계 PC 를 둘 곳 | **AKIS 온실 안** (카메라와 같은 공유기) |
+| 보는 곳 | 천안·서울 등 **어디서든** (허브를 거친다) |
+| 천안 사무실 PC | **중계에 쓸 수 없다** — 카메라와 망이 다르다 |
+
+설정 보기: **`apps/hub/docs/cctv-relay/go2rtc.example.yaml`** (자리표시자를 실제 값으로 바꿔 쓴다)
+
+#### 4.3.1 중계 PC 에 할 일 (카메라가 있는 시설에서)
+
+1. **Tapo 앱에서 카메라 계정 만들기**
+   Tapo 앱 → 카메라 → 설정 → 고급 설정 → 카메라 계정. **Tapo 로그인과 별개의 아이디·비밀번호**다.
+   만들고 나면 RTSP 주소는 `rtsp://아이디:비밀번호@카메라IP:554/stream1` (고화질) · `/stream2` (저화질).
+   카메라 IP 는 공유기 관리 화면이나 Tapo 앱에서 확인한다. **공유기에서 IP 를 고정**해 두는 것이 좋다(재부팅 때 바뀌면 끊긴다).
+
+2. **중계 프로그램 설치 — go2rtc** (무료·공개)
+   내려받기: <https://github.com/AlexxIT/go2rtc/releases> 의 `go2rtc_win64.zip` (Windows 10 이상 64비트).
+   압축을 풀고 같은 폴더에 `go2rtc.yaml` 을 만든다:
+
+   전체 보기는 **`apps/hub/docs/cctv-relay/go2rtc.example.yaml`** 에 있다. 요지는 이렇다:
+
+   ```yaml
+   api:
+     listen: "127.0.0.1:1984"   # 바깥에 직접 열지 않는다. 터널만 통과시킨다.
+
+   streams:
+     akis-gh1:  # 허브에 등록할 camera_id 와 같게 맞추면 헷갈리지 않는다
+       - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-1>:554/stream2
+     akis-gh2:
+       - rtsp://<카메라아이디>:<카메라비밀번호>@<카메라IP-2>:554/stream2
+   ```
+
+   **`stream2`(저화질)로 시작하는 것을 권한다** — 우즈베키스탄에서 한국까지 나가는 업로드가 좁을 수 있다.
+   잘 보이면 그때 `stream1`(고화질)로 올린다.
+
+   `go2rtc.exe` 를 실행하고 <http://127.0.0.1:1984/> 에서 영상이 보이는지 먼저 확인한다.
+   여기서 안 보이면 그 다음 단계는 의미가 없다 — 카메라 계정·IP·같은 망인지부터 다시 본다.
+
+   go2rtc 가 내보내는 주소가 곧 허브에 넣을 **경로**다:
+
+   | 재생 방식 | 경로 | 형식 |
+   |---|---|---|
+   | `mp4` (실시간 영상) | `/api/stream.mp4?src=akis-gh1` | `video/mp4` |
+   | `snapshot` (사진) | `/api/frame.jpeg?src=akis-gh1` | `image/jpeg` |
+
+   허브는 이 두 형식만 받는다. 다른 형식이 오면 502 로 막는다.
+
+3. **PC 가 꺼지지 않게 한다**
+   제어판 → 전원 옵션 → 절전 **안 함**, 하드디스크 끄기 **안 함**. 화면만 꺼지는 것은 괜찮다.
+   PC 를 끄면 경영진 화면도 같이 꺼진다.
+
+4. **Cloudflare Tunnel 로 내보내기**
+   `cloudflared` 를 설치하고(<https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/>)
+   Cloudflare Zero Trust 에서 터널을 만든 뒤, 공개 호스트 이름을 `http://127.0.0.1:1984` 로 연결한다.
+   **공유기 포트포워딩은 하지 않는다** — 터널은 밖에서 들어오는 문을 열지 않는다.
+
+5. **아무나 못 보게 잠그기** — 둘 중 하나를 고른다
+
+   | 방법 | 설정 | 허브 쪽 |
+   |---|---|---|
+   | **Cloudflare Access 서비스 토큰** (권장) | Zero Trust → Access → 그 호스트에 정책을 걸고 서비스 토큰 발급 | `CCTV_RELAY_AUTH="cf-access"` + Secret `CCTV_RELAY_CF_ID`·`CCTV_RELAY_CF_SECRET` |
+   | go2rtc 자체 인증 | `go2rtc.yaml` 의 `api:` 에 `username`·`password` 추가 | `CCTV_RELAY_AUTH="basic"` + Secret `CCTV_RELAY_USER`·`CCTV_RELAY_PASS` |
+
+   권장 쪽이 나은 이유: Cloudflare 가 **가장자리에서 먼저 막아** 중계 PC 까지 요청이 오지 않는다.
+
+   **`CCTV_RELAY_AUTH` 를 정해 놓고 짝이 되는 값이 없으면 허브는 재생을 거부한다** —
+   조용히 아무 것도 안 밝히고 부르면, 중계 서버가 열려 있을 때 그대로 통과해 버리기 때문이다.
+   **값이 비어 있어도 거부한다.** 인증 없이 쓰려면 `"none"` 을 **적어서** 골라야 한다 — 설정을 반만 한 상태로 켜지지 않게.
+
+#### 4.3.2 허브 쪽에 할 일
+
+1. Secret 등록 (설정 파일에 넣지 않는다):
+   ```bash
+   npx wrangler secret put CCTV_RELAY_CF_ID --env=""
+   npx wrangler secret put CCTV_RELAY_CF_SECRET --env=""
+   ```
+2. `wrangler.jsonc` 에서
+   - `CCTV_RELAY_ORIGIN` → 4.3.1-4 에서 만든 **터널 호스트 주소**(`https://...`)
+   - `CCTV_RELAY_AUTH` → `"cf-access"` 또는 `"basic"` (배포 설정의 기본값은 자리표시자 `<CCTV_RELAY_AUTH>` 이고 그대로면 거부된다. `"none"` 도 직접 적어야 한다)
+   **자리표시자 `<CCTV_RELAY_ORIGIN>` 그대로면 꺼진 것과 같게 동작한다.**
+3. 배포 후 관리 화면의 「CCTV 카메라 등록」(또는 `POST /api/admin/cctv`)에서 카메라를 등록한다. **경로만 넣는다** (이름·순서만 고칠 때 경로를 비우면 이전 경로가 유지된다):
+   ```json
+   { "camera_id": "akis-gh1", "name_ko": "AKIS 온실 1동", "site": "타슈켄트 AKIS",
+     "stream_kind": "mp4", "stream_path": "/api/stream.mp4?src=akis-gh1" }
+   ```
+4. `CCTV_ENABLED` 를 `"true"` 로 바꾸고 배포 → *CCTV* 화면에서 확인
+
+#### 4.3.3 해외 구간(우즈베키스탄↔한국)에서 주의할 것
+
+| 항목 | 내용 |
+|---|---|
+| **업로드 속도** | 영상은 현지 회선의 **업로드**로 나간다. 1080p 실시간은 카메라 1대당 대략 2~4 Mbps 가 필요하다. 회선이 좁으면 `stream2`(저화질) 를 쓰거나 `snapshot` 방식으로 바꾼다 `[재확인 필요]` |
+| **동시 시청** | 허브가 사람마다 따로 중계 서버에 요청한다. 여러 명이 동시에 보면 업로드도 그만큼 늘어난다 |
+| **지연** | 진행형 MP4 는 보통 수 초 지연된다. 실시간 관제용이 아니라 **상황 확인용**으로 보아야 한다 `[재확인 필요]` |
+| **정전·회선 단절** | 중계 PC 나 현지 회선이 끊기면 **영상 보기(`/open`)** 는 오류 코드(`relay_unreachable` 등)와 한국어 안내로 막힌다. **이미 보던 중**에 끊기면 브라우저 `<img>/<video>` 에는 코드가 없어 1.5초·3초 간격으로 2번 다시 청하고, 한 번 다시 연 뒤(`/open` 의 코드가 보인다) 그래도 안 되면 "영상을 열지 못했습니다". 허브가 끊긴 것을 "정상" 으로 표시하지는 않는다 |
+
+#### 4.3.4 온실 현장이라서 더 볼 것
+
+| 항목 | 내용 |
+|---|---|
+| **PC 를 둘 자리** | 온실 안은 습기·먼지·온도 변화가 크다. 사무실·제어실처럼 **환경이 안정된 칸**에 두고, 거기서 카메라와 같은 공유기에 붙인다 |
+| **정전** | 온실은 정전이 잦을 수 있다. 정전되면 위 「정전·회선 단절」 행처럼 보인다(끊긴 것을 "정상" 으로 표시하지 않는다). 무정전 장치(UPS)를 붙이면 짧은 정전은 넘긴다 `[재확인 필요]` |
+| **무선 연결** | 카메라가 Wi-Fi 로 붙어 있으면 온실 구조물·습기 때문에 끊길 수 있다. 가능하면 유선을 권한다 |
+| **현지 인터넷** | 온실 회선의 **업로드** 속도를 먼저 재 본다. 좁으면 `stream2`·`snapshot` 으로 시작한다 |
+
+#### 4.3.5 그 밖에 남은 것
+
+- **노무·법무 검토**: 직원이 찍히는 화면을 상시 열람하는 형태가 되면 근로자 감시 문제가 생길 수 있다.
+  기술적으로는 열람 기록(`cctv_view_open` 감사기록)과 ADMIN 제한이 들어가 있으나, 한국·우즈베키스탄 법령 판단은 이 문서 범위 밖이다. `[재확인 필요]`
+- **G11**(실제 중계 서버·카메라 연결, 영상 재생, 대역폭·CPU)과 **박선기 대표 승인**
+
+**안 켜면 아무 일도 없다.** 꺼져 있거나 주소가 자리표시자면 카메라는 전부 "볼 수 없음" 으로 표시되고,
+영상 요청은 `409` 로 끝난다(중계 서버를 부르지도 않는다).
+
+> 위 프로그램 이름·주소는 2026-09-19 웹 검색으로 확인했다. **내려받기 전에 공식 저장소 주소가 맞는지 다시 확인한다.** `[재확인 필요]`
+
 ---
 
 ## 5. 알려진 한계
@@ -257,6 +395,10 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 - **④ 저장과 journal `applied` 를 한 batch 로 묶는 조건부 SQL** 은 로컬 `node:sqlite` 에서만 확인했다. 원격 D1 batch 에서 앞 문장의 결과를 뒤 문장이 보는지는 **G02 운영 검증 대기**다.
 - **토큰 등록 API 는 만들지 않았다**: 평문 토큰을 HTTP 로 받는 경로를 열지 않기 위해서다. 첫 행은 배포 담당자가 SQL·스크립트로 넣는다.
 - **번들 크기**: 사전 컴파일 검사기(약 259 KiB) 때문에 137 KiB → 590 KiB(gzip 90 KiB)로 늘었다. Workers 한도는 비압축 64 MiB(양 플랜 동일, 공식 문서 2026-09-17 확인)라 여유가 크다. Free 플랜 CPU 10 ms/요청은 조회 경로(캐시 읽기)만 타므로 문제되지 않으나, Cron의 봉투 검증 6건에 대한 실제 CPU 사용량은 **운영 검증 대기**다.
+- **CCTV 는 중계 서버가 있어야 동작한다**: 허브는 RTSP 를 다루지 않는다. 중계 서버가 없으면 카메라는 전부 "볼 수 없음" 이다. 실제 중계 서버·카메라 연결은 **G11 운영 검증 대기**.
+- **CCTV 재생 방식은 `mp4`·`snapshot` 둘뿐이다**: HLS·WebRTC 는 넣지 않았다. HLS 는 조각 파일마다 전달 경로가 필요하고, WebRTC 는 Worker 가 중계할 수 없다. 모르는 방식은 저장도 재생도 거부한다.
+- **영상 화면은 한국어만 있다**: FIRMMIT 요청(경영진 전용). 우즈베크어·러시아어로 보아도 이 화면만 한국어로 나온다.
+- **브라우저 재생은 실제 H.264 영상으로 확인하지 못했다**: 시험 환경에서 H.264 로 인코딩할 수 없어, 사진(JPEG) 방식만 브라우저에서 실제로 띄워 확인했다. 영상 방식은 **G11 운영 검증 대기**. `[재확인 필요]`
 - **알림 OFF**: 가용성 변화는 감사기록에만 남고 발송 코드는 없다(Phase 3).
 - **그룹 자동 동기화는 로컬 시험까지만 확인**: 실제 Cloudflare Access API 응답 모양(특히 `result_info` 유무, `require` 규칙의 실제 형태)은 **운영 검증 대기(G01)**. 공식 문서(2026-09-17 확인)에 맞춘 가짜 서버로만 왕복 시험했다. `email_list` 규칙은 목록 조회 API 를 확인하지 않아 **지원하지 않고 실패 처리**한다 `[재확인 필요]`.
 - 자동 동기화는 **이메일 규칙만** 해석한다. Access 쪽에서 그룹 규칙을 도메인·Everyone 등으로 바꾸면 그 시점부터 동기화가 계속 실패하고(사본은 유지) 30분 뒤 비ADMIN 쓰기가 막힌다 — 관리 화면의 실패 사유를 보고 되돌려야 한다.

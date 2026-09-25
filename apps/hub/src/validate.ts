@@ -15,7 +15,8 @@ export type Validator<T> = (value: unknown, field: string) => T;
 
 const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-const CONTROL_RE = /[\x00-\x1f\x7f]/;
+/** 제어문자(탭·개행 포함)는 어떤 입력에도 넣지 않는다. cctv.ts 도 이 규칙을 쓴다. */
+export const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
 export function str(opts: { min?: number; max: number; pattern?: RegExp }): Validator<string> {
   return (v, field) => {
@@ -39,6 +40,16 @@ export const email: Validator<string> = (v, field) => {
 
 export function isEmail(v: unknown): v is string {
   return typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v);
+}
+
+/** 정수 범위. 문자열·소수·범위 밖은 거부한다 (null ≠ 0 원칙과 같은 결). */
+export function int(opts: { min: number; max: number }): Validator<number> {
+  return (v, field) => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < opts.min || v > opts.max) { // MUTATION:INT-RANGE
+      throw new ValidationError('invalid_value', field);
+    }
+    return v;
+  };
 }
 
 export const bool: Validator<boolean> = (v, field) => {

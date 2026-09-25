@@ -13,10 +13,12 @@ import {
   snapshotDiff,
   snapshotReplaceStmts,
 } from './groupsync';
-import { ApiError, errorIncludes, jsonError } from './http';
+import { CAMERA_ID_RE, cameraList, getCamera, relayReady, STREAM_KINDS, streamPathValidator, toView } from './cctv';
+import { requireHubAdmin } from './guard';
+import { ApiError, errorIncludes } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
 import { isEnabled as isTokenRefreshEnabled, tokenStatuses } from './tokens/refresh';
-import { arrayOf, email, futureIsoUtc, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
+import { arrayOf, email, futureIsoUtc, int, objectOf, oneOf, readJsonBody, role, str, ValidationError } from './validate';
 
 const GROUP_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const SCOPE_RE = /^[A-Za-z0-9_.:*-]{1,64}$/;
@@ -25,14 +27,12 @@ const ID_RE = /^[1-9][0-9]{0,15}$/;
 
 const reason = { v: str({ max: 500 }), optional: true } as const;
 
+// 정렬 순서: 0 이상 9999 이하의 정수만 (실수·NaN·범위 밖 거부)
 export function adminRoutes() {
   const r = new Hono<HubEnv>();
 
-  // ADMIN 확인 (서버가 최종 판정)
-  r.use('*', async (c, next) => {
-    if (!c.get('principal').isHubAdmin) return jsonError(c, 403, 'forbidden', 'Administrator role required');
-    await next();
-  });
+  // ADMIN 확인 (서버가 최종 판정) — CCTV API 와 같은 관문
+  r.use('*', requireHubAdmin);
 
   r.get('/users', async (c) => {
     const db = c.env.DB;
@@ -342,6 +342,104 @@ export function adminRoutes() {
       tokens: await tokenStatuses(c.env.DB, c.get('now')),
     }),
   );
+
+  // R3 CCTV 카메라 등록 (허브 자체 관리 입력 — 하위 앱·카메라에 쓰지 않는다).
+  // 중계 서버 **안에서의 경로만** 받는다. 서버 주소·카메라 계정은 설정값·중계 서버 쪽에 있다.
+  r.get('/cctv', async (c) => {
+    // 뷰어(/api/cctv)와 같은 판정·같은 모양. 관리 화면은 정렬·수정 시각만 더 본다.
+    const l = await cameraList(c.env, c.env.DB);
+    return c.json({
+      enabled: l.enabled,
+      relay_configured: l.relay_configured,
+      cameras: l.rows.map((row) => ({ ...toView(row, l.relay_configured), sort: row.sort, updated_at: row.updated_at })),
+    });
+  });
+
+  r.post('/cctv', async (c) => {
+    const body = objectOf({
+      camera_id: { v: str({ min: 2, max: 64, pattern: CAMERA_ID_RE }) },
+      name_ko: { v: str({ max: 100 }) },
+      site: { v: str({ max: 64 }) },
+      stream_kind: { v: oneOf(STREAM_KINDS) },
+      // 연결하려면 '/' 로 시작하는 경로. 미연결로 두려면 null. **빼면 이전 경로 유지** (새 등록에서 빼면 미연결).
+      // 목록은 경로를 돌려주지 않으므로, 이름·순서만 고치는 저장이 경로를 지우지 않게 하려면 이 규칙이 필요하다.
+      stream_path: { v: streamPathValidator, nullable: true, optional: true },
+      sort: { v: int({ min: 0, max: 9999 }), optional: true },
+      reason,
+    })(await readJsonBody(c.req.raw), '');
+
+    const db = c.env.DB;
+    const now = c.get('now').toISOString();
+    const actor = c.get('principal').email;
+    // 이전 상태는 batch 를 준비할 때마다 읽는다 — runAudited 가 재시도하면 다시 읽으므로 감사기록이 묵은 값을 담지 않는다
+    // 저장할 행을 한 번 계산해, 문장(bind)과 응답이 **같은 값**을 쓴다. runAudited 가 재시도하면 다시 계산한다.
+    // (닫힌 함수 안의 대입은 TS 흐름 분석이 따라오지 못하므로 결과를 담는 자리 하나만 둔다)
+    const resolved: { before: Awaited<ReturnType<typeof getCamera>>; row: Parameters<typeof toView>[0] | null } = { before: null, row: null };
+    const resolveCameraWrite = async () => {
+      const before = await getCamera(db, body.camera_id);
+      // 경로: 보낸 값 > 이전 값 > 없음. 상태는 경로에서만 정한다 — 따로 받지 않아 어긋날 수 없다
+      // 단, 재생 방식이 바뀌는데 경로를 빼면 거부한다 — 옛 경로(예: .mp4)를 새 방식(사진)에 물려주면
+      // 목록은 "볼 수 있음" 인데 재생은 형식 불일치로 늘 막히는 어긋남이 생긴다.
+      if (body.stream_path === undefined && before !== null && before.stream_path !== null && before.stream_kind !== body.stream_kind) { // MUTATION:ADMIN-KIND-CHANGE
+        throw new ValidationError('stream_path_required', 'stream_path');
+      }
+      const stream_path: string | null = body.stream_path === undefined ? (before?.stream_path ?? null) : body.stream_path;
+      const row = {
+        camera_id: body.camera_id,
+        name_ko: body.name_ko,
+        site: body.site,
+        stream_kind: body.stream_kind,
+        stream_path,
+        status: stream_path === null ? 'not_connected' : 'active',
+        sort: body.sort ?? before?.sort ?? 0,
+        created_at: before?.created_at ?? now,
+        updated_at: now,
+      };
+      resolved.before = before;
+      resolved.row = row;
+      return { before, row };
+    };
+
+    await runAudited(db, async () => {
+      const { before, row } = await resolveCameraWrite();
+      const { stream_path, status, sort } = row;
+      return {
+      stmts: [
+        db
+          .prepare(
+            `INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(camera_id) DO UPDATE SET
+               name_ko = excluded.name_ko, site = excluded.site, stream_kind = excluded.stream_kind,
+               stream_path = excluded.stream_path, status = excluded.status, sort = excluded.sort,
+               updated_at = excluded.updated_at`,
+          )
+          .bind(row.camera_id, row.name_ko, row.site, row.stream_kind, row.stream_path, row.status, row.sort, row.created_at, row.updated_at),
+      ],
+      entry: {
+        ts: now,
+        actor_email: actor,
+        action: before === null ? 'cctv_camera_create' : 'cctv_camera_update',
+        target: `camera:${body.camera_id}`,
+        // 경로는 감사기록에 넣지 않는다. 바뀌었는지 여부만 남긴다.
+        detail: {
+          name_ko: body.name_ko,
+          site: body.site,
+          stream_kind: body.stream_kind,
+          status,
+          path_changed: (before?.stream_path ?? null) !== stream_path,
+          from_status: before?.status ?? null,
+          reason: body.reason ?? null,
+        },
+        request_id: c.get('requestId'),
+      },
+      };
+    });
+
+    // 응답은 방금 저장한 바로 그 행으로 만든다 — 다시 읽으면 왕복이 하나 늘고, 그 사이 다른 저장이 끼면 남의 결과를 돌려준다
+    if (resolved.row === null) throw new ApiError(500, 'internal_error', 'Internal error');
+    return c.json({ camera: toView(resolved.row, relayReady(c.env)) }, resolved.before === null ? 201 : 200);
+  });
 
   r.get('/audit', async (c) => {
     const q = c.req.query();

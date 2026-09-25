@@ -29,9 +29,9 @@ def bundle():
     )
 
 
-def start_server(port, stale=False, autosync=False):
+def start_server(port, stale=False, autosync=False, cctv=True):
     env = dict(os.environ, PORT=str(port), STALE="1" if stale else "0",
-               AUTOSYNC="1" if autosync else "0", NODE_NO_WARNINGS="1")
+               AUTOSYNC="1" if autosync else "0", CCTV="on" if cctv else "off", NODE_NO_WARNINGS="1")
     proc = subprocess.Popen(["node", str(BUNDLE)], cwd=HUB, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -72,6 +72,7 @@ PAGE_CHECKS_JS = """
     badLinks, disabledWithLink, greyText,
     iframes: document.querySelectorAll('iframe').length,
     adminTabVisible: !document.querySelector('[data-route=admin]').hidden,
+    cctvTabVisible: !document.querySelector('[data-route=cctv]').hidden,
     alerts: [...document.querySelectorAll('[role=alert]')].map((a) => a.textContent.replace(/\\s+/g, ' ').trim()).slice(0, 3),
     logoRight: (() => { const l = document.querySelector('.logo').getBoundingClientRect(); return l.right > window.innerWidth - 40 && l.right <= window.innerWidth && l.top < 60; })(),
   };
@@ -127,6 +128,94 @@ def shoot(browser, base, name, route, width, height, as_user="admin", lang="ko",
     for p in problems:
         report["failures"].append(f"{name}: {p}")
     ctx.close()
+
+
+def flow_cctv_play(browser, base):
+    """CCTV: 영상 보기 → 열람 기록 1건 → 같은 출처에서만 받아옴 → 닫기."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    ctx.set_extra_http_headers({"x-test-as": "admin"})
+    page = ctx.new_page()
+    errors, external = [], []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.on("request", lambda r: external.append(r.url) if not r.url.startswith(base) else None)
+    page.goto(f"{base}/#/cctv")
+    page.wait_for_selector("table tbody tr")
+    before = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0].action")
+    # 사진 방식 카메라(이천 재배동)를 연다 — 가짜 중계 서버가 고정 그림 1장을 준다
+    page.locator("tr", has_text="이천 재배동").get_by_role("button", name="영상 보기").click()
+    page.wait_for_selector(".cctv-stage img.cctv-media")
+    page.wait_for_function("() => { const i = document.querySelector('.cctv-stage img'); return i && i.complete && i.naturalWidth > 0; }", timeout=5000)
+    img = page.evaluate("""() => { const i = document.querySelector('.cctv-stage img');
+        return { src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight, origin: new URL(i.src).origin }; }""")
+    after = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0]")
+    page.screenshot(path=str(SCREENS / "cctv-play-ko-1440.png"), full_page=True)
+    page.get_by_role("button", name="닫기").click()
+    page.wait_for_function("() => !document.querySelector('.cctv-stage img')")
+    closed = page.evaluate("() => document.querySelectorAll('.cctv-stage img, .cctv-stage video').length")
+    ctx.close()
+
+    probs = []
+    if not img["src"].startswith("/api/cctv/"):
+        probs.append(f"stream not same-origin path: {img['src']}")
+    if img["origin"] != base:
+        probs.append(f"stream origin {img['origin']} != {base}")
+    if img["w"] < 100:
+        probs.append(f"image did not load: {img}")
+    if before == "cctv_view_open":
+        probs.append("audit already had cctv_view_open before opening")
+    if after.get("action") != "cctv_view_open" or after.get("target") != "camera:icheon-vfarm":
+        probs.append(f"cctv open not audited: {after.get('action')} {after.get('target')}")
+    detail = str(after.get("detail"))
+    if "relay.example.test" in detail or "/snapshot/" in detail:
+        probs.append("relay address or path leaked into audit detail")
+    if closed != 0:
+        probs.append("player not removed after close")
+    if external:
+        probs.append(f"external requests: {external}")
+    if errors:
+        probs.append(f"console errors {errors}")
+    report["flows"].append({"name": "cctv_play_flow", "image": img, "audit": {"action": after.get("action"), "target": after.get("target")},
+                            "external_requests": external, "console_errors": errors, "problems": probs})
+    report["failures"] += [f"cctv_play_flow: {p}" for p in probs]
+
+
+def flow_cctv_mobile_actions(browser, base):
+    """CCTV 390px: 접힌 표에서도 상태 배지와 '영상 보기' 단추가 보여야 한다 (B단계 회귀 방지)."""
+    ctx = browser.new_context(viewport={"width": 390, "height": 844})
+    ctx.set_extra_http_headers({"x-test-as": "admin"})
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.goto(f"{base}/#/cctv")
+    page.wait_for_selector("table tbody tr")
+    row = page.locator("tr", has_text="이천 재배동")
+    btn = row.get_by_role("button", name="영상 보기")
+    badge = row.locator(".badge")
+    visible = {"button": btn.is_visible(), "badge": badge.first.is_visible(),
+               "hidden_cells": row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")}
+    # 펼치면 나머지 열이 나온다
+    row.get_by_role("button", name="자세히 보기").click()
+    expanded_hidden = row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")
+    overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    ctx.close()
+    probs = []
+    if not visible["button"]:
+        probs.append("'영상 보기' button hidden on 390px")
+    if not visible["badge"]:
+        probs.append("state badge hidden on 390px")
+    if visible["hidden_cells"] == 0:
+        probs.append("nothing collapsed on 390px (expected 시설·방식 hidden)")
+    if expanded_hidden != 0:
+        probs.append(f"{expanded_hidden} cells still hidden after expand")
+    if overflow > 0:
+        probs.append(f"horizontal overflow {overflow}px")
+    if errors:
+        probs.append(f"console errors {errors}")
+    report["flows"].append({"name": "cctv_mobile_actions", "visible": visible, "expanded_hidden": expanded_hidden, "overflow": overflow,
+                            "console_errors": errors, "problems": probs})
+    report["failures"] += [f"cctv_mobile_actions: {p}" for p in probs]
 
 
 def flow_revoke(browser, base):
@@ -197,13 +286,16 @@ def main():
     srv = start_server(8801)
     srv_stale = start_server(8802, stale=True)
     srv_auto = start_server(8803, autosync=True)
+    srv_nocctv = start_server(8804, cctv=False)
     base, base_stale, base_auto = "http://127.0.0.1:8801", "http://127.0.0.1:8802", "http://127.0.0.1:8803"
+    base_nocctv = "http://127.0.0.1:8804"
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(executable_path=CHROMIUM if os.path.exists(CHROMIUM) else None)
 
             def admin_tab_visible(expected):
-                return lambda page, c: [] if c["adminTabVisible"] == expected else [f"admin tab visible={c['adminTabVisible']}"]
+                return lambda page, c: ([] if c["adminTabVisible"] == expected else [f"admin tab visible={c['adminTabVisible']}"]) \
+                    + ([] if c["cctvTabVisible"] == expected else [f"cctv tab visible={c['cctvTabVisible']}"])
 
             def has_disabled(page, c):
                 return [] if c["disabledCards"] >= 3 and c["cardLinks"] >= 8 else [f"cards {c['cardLinks']} disabled {c['disabledCards']}"]
@@ -214,6 +306,8 @@ def main():
             shoot(browser, base, "home-admin-ko-1440", "home", 1440, 900, expect=lambda p, c: has_disabled(p, c) + admin_tab_visible(True)(p, c))
             shoot(browser, base, "home-admin-ko-390", "home", 390, 844)
             shoot(browser, base, "status-admin-ko-1440", "status", 1440, 900)
+            # 좁은 화면에서 열이 많은 표가 접히는지 (B단계 행 펼치기)
+            shoot(browser, base, "status-admin-ko-390", "status", 390, 844)
             shoot(browser, base, "admin-ko-1440", "admin", 1440, 900)
             shoot(browser, base, "admin-ko-390", "admin", 390, 844)
             shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn", expect=admin_tab_visible(False))
@@ -231,10 +325,27 @@ def main():
                   expect=lambda p, c: ([] if p.locator("text=api_http_403").count() == 1 else ["sync failure code missing"])
                   + ([] if p.locator("textarea").count() == 0 else ["manual snapshot form still open"]))
             shoot(browser, base_auto, "admin-sync-auto-ru-390", "admin", 390, 844, lang="ru")
+            # R3 CCTV: 목록 · 꺼짐 안내 · 좁은 화면
+            def cctv_list_ok(page, c):
+                out = []
+                if page.locator("table tbody tr").count() != 3:
+                    out.append("cctv rows != 3")
+                # 미연결 카메라의 '영상 보기' 는 눌리지 않아야 한다
+                if page.locator("button:disabled").count() != 1:
+                    out.append(f"disabled open buttons={page.locator('button:disabled').count()}")
+                return out
+
+            shoot(browser, base, "cctv-admin-ko-1440", "cctv", 1440, 900, expect=cctv_list_ok)
+            shoot(browser, base, "cctv-admin-ko-390", "cctv", 390, 844)
+            shoot(browser, base_nocctv, "cctv-off-ko-1440", "cctv", 1440, 900,
+                  expect=lambda p, c: ([] if p.locator(".alert-warn").count() >= 1 else ["cctv off notice missing"])
+                  + ([] if p.locator("button:disabled").count() == 3 else ["cameras should not be playable when off"]))
+            flow_cctv_play(browser, base)
+            flow_cctv_mobile_actions(browser, base)
             flow_revoke(browser, base)
             browser.close()
     finally:
-        for s in (srv, srv_stale, srv_auto):
+        for s in (srv, srv_stale, srv_auto, srv_nocctv):
             s.terminate()
             s.wait(timeout=5)
     (SCREENS / "ui-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))

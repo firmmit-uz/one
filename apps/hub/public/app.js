@@ -134,8 +134,8 @@ async function api(path, { method = 'GET', body } = {}) {
 function errorText(err) {
   const code = err instanceof ApiError ? err.code : 'generic';
   const key = `err_${code}`;
-  const dict = DICT[state.lang] || DICT.ko;
-  if (key in dict) return dict[key];
+  const msg = t(key); // t() 가 ko 로 되돌리고, 없으면 키를 그대로 돌려준다
+  if (msg !== key) return msg;
   if (err instanceof ApiError && err.status >= 500) return t('err_internal_error');
   return t('err_generic');
 }
@@ -198,6 +198,32 @@ function table(headers, rows, opts = {}) {
       if (headers[i]) td.setAttribute('data-label', headers[i]);
     });
   }
+  // 좁은 화면에서는 핵심 두 열만 두고 나머지는 행마다 펼쳐 본다 (열이 3개 이상일 때만)
+  if (opts.stack && headers.length > 2 && Array.isArray(opts.keep)) {
+    // 접혀도 보이는 열은 표마다 keep 으로 정한다. keep 이 없으면 아무 열도 숨기지 않는다.
+    // 첫 열(이름)은 항상 남긴다 — 펼치기 단추가 거기 있다.
+    const keep = new Set([0, ...opts.keep]);
+    for (const tr of rows) {
+      const first = tr.children[0];
+      if (!first) continue;
+      tr.classList.add('is-collapsed');
+      [...tr.children].forEach((td, i) => { if (keep.has(i)) td.classList.add('col-keep'); });
+      const toggle = el('button', {
+        type: 'button',
+        class: 'row-expand',
+        'aria-expanded': 'false',
+        'aria-label': t('row_expand'),
+        text: '⌄',
+        onclick: () => {
+          const collapsed = tr.classList.contains('is-collapsed');
+          tr.classList.toggle('is-collapsed', !collapsed);
+          toggle.setAttribute('aria-expanded', String(collapsed));
+          toggle.setAttribute('aria-label', collapsed ? t('row_collapse') : t('row_expand'));
+        },
+      });
+      first.prepend(toggle);
+    }
+  }
   return el(
     'div',
     { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': opts.label || headers.join(', ') },
@@ -210,6 +236,31 @@ function table(headers, rows, opts = {}) {
   );
 }
 
+/**
+ * 좁은 화면에서만 목록 뒷부분을 접는다. 넓은 화면에서는 CSS 가 단추를 숨기고 전부 보여준다.
+ * 접힌 항목은 display:none 이라 보조기술에도 읽히지 않고, 단추로 펼치면 그대로 돌아온다.
+ */
+function collapsible(listEl, keep) {
+  const total = listEl.children.length;
+  if (total <= keep) return [listEl];
+  listEl.classList.add('is-collapsed');
+  [...listEl.children].forEach((child, i) => { if (i >= keep) child.classList.add('more-item'); });
+  const rest = total - keep;
+  const btn = el('button', {
+    type: 'button',
+    class: 'btn btn-secondary btn-sm more-btn',
+    'aria-expanded': 'false',
+    text: t('show_more_n', { n: rest }),
+    onclick: () => {
+      const collapsed = listEl.classList.contains('is-collapsed');
+      listEl.classList.toggle('is-collapsed', !collapsed);
+      btn.setAttribute('aria-expanded', String(collapsed));
+      btn.textContent = collapsed ? t('show_less') : t('show_more_n', { n: rest });
+    },
+  });
+  return [listEl, btn];
+}
+
 // ---------- 화면 틀 ----------
 function applyStaticText() {
   document.documentElement.lang = state.lang;
@@ -219,8 +270,10 @@ function applyStaticText() {
   sel.value = state.lang;
   const who = document.getElementById('who');
   who.textContent = state.me ? state.me.email : '';
-  const adminTab = document.querySelector('[data-route="admin"]');
-  adminTab.hidden = !(state.me && state.me.is_admin === true);
+  const isAdmin = !!(state.me && state.me.is_admin === true);
+  document.querySelector('[data-route="admin"]').hidden = !isAdmin;
+  // CCTV 화면도 ADMIN 에게만 보인다 (서버가 다시 한 번 막는다)
+  document.querySelector('[data-route="cctv"]').hidden = !isAdmin;
   for (const tab of document.querySelectorAll('[data-route]')) {
     if (tab.getAttribute('data-route') === state.route) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
@@ -228,11 +281,12 @@ function applyStaticText() {
 }
 
 function currentRoute() {
-  const m = /^#\/(home|status|me|admin)$/.exec(window.location.hash);
+  const m = /^#\/(home|status|me|cctv|admin)$/.exec(window.location.hash);
   return m ? m[1] : 'home';
 }
 
 async function render(focus = false) {
+  stopCctv(); // 어느 화면으로 가든 남아 있던 영상 연결을 먼저 끊는다
   state.route = currentRoute();
   applyStaticText();
   const main = document.getElementById('main');
@@ -244,7 +298,7 @@ async function render(focus = false) {
     put(main, loading());
     return;
   }
-  const view = { home: viewHome, status: viewStatus, me: viewMe, admin: viewAdmin }[state.route];
+  const view = { home: viewHome, status: viewStatus, me: viewMe, cctv: viewCctv, admin: viewAdmin }[state.route];
   // 화면마다 새 컨테이너: 늦게 끝난 이전 렌더는 떼어진 노드에만 씀
   const container = el('div', { class: 'view' }, loading());
   put(main, container);
@@ -331,15 +385,21 @@ function breakdownToggle(k) {
 /** 홈 상단 고정 줄: 데이터 기준 · 지연 KPI 수 · 다운 수 */
 function kpiStatusLine(data) {
   const down = data.kpis.find((k) => k.kpi_id === 'SYS.UPTIME');
-  const downText = down && down.measure && down.measure.value !== null ? String(down.measure.value) : '—';
+  // 숫자가 아니면(null·빈값·문자) 0 으로 바꾸지 않고 회색 "—" 로 둔다 — null ≠ 0
+  const finiteOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const downN = finiteOrNull(down && down.measure ? down.measure.value : null);
+  const staleN = finiteOrNull(data.summary ? data.summary.stale : null);
+  // 다운·지연은 글자만으로 묻히지 않게 배지로 낸다 (아이콘 + 글자 + 색 3중)
+  const countBadge = (n, key, badKind, badIcon) =>
+    n === null
+      ? badge('muted', t(key, { n: '—' }), '·')
+      : badge(n > 0 ? badKind : 'state-up', t(key, { n: String(n) }), n > 0 ? badIcon : '✓');
   const line = el(
     'a',
     { class: 'status-line', href: '#/status' },
     el('span', { text: t('kpi_as_of', { time: fmtTime(data.as_of) }) }),
-    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
-    el('span', { text: t('kpi_stale_n', { n: data.summary.stale }) }),
-    el('span', { class: 'sep', 'aria-hidden': 'true', text: '·' }),
-    el('span', { text: t('kpi_down_n', { n: downText }) }),
+    countBadge(downN, 'kpi_down_n', 'state-down', '×'),
+    countBadge(staleN, 'kpi_stale_n', 'warn', '⏱'),
   );
   return line;
 }
@@ -366,9 +426,12 @@ async function kpiSection() {
     put(box,
       kpiStatusLine(data),
       sectionHead(t('kpi_system')),
-      data.kpis.length
-        ? el('div', { class: 'kpi-grid' }, data.kpis.map(kpiCard))
-        : el('p', { class: 'empty', text: t('group_empty') }),
+      ...(data.kpis.length
+        // "준비 중"은 읽을 값이 없으므로 연결된 지표 뒤로 보낸다 (정렬은 안정적이라 나머지 차례는 그대로)
+        ? collapsible(el('div', { class: 'kpi-grid' }, [...data.kpis]
+            .sort((a, b) => (a.display_status === 'unavailable' ? 1 : 0) - (b.display_status === 'unavailable' ? 1 : 0))
+            .map(kpiCard)), 4)
+        : [el('p', { class: 'empty', text: t('group_empty') })]),
     );
   } catch (err) {
     put(box, sectionHead(t('kpi_system')), errorBox(err, () => render()));
@@ -397,7 +460,9 @@ async function viewHome(main) {
       'section',
       { class: 'launcher-group', 'aria-labelledby': `grp-${kind}` },
       el('h2', { id: `grp-${kind}`, text: t(`group_${kind}`) }),
-      items.length === 0 ? el('p', { class: 'empty', text: t('group_empty') }) : el('ul', { class: 'card-grid' }, items.map(appCard)),
+      ...(items.length === 0
+        ? [el('p', { class: 'empty', text: t('group_empty') })]
+        : collapsible(el('ul', { class: 'card-grid' }, items.map(appCard)), 3)),
     );
   });
   const kpis = el('div');
@@ -505,7 +570,7 @@ async function viewStatus(main) {
     ),
     tiles,
     el('p', { class: 'meta', text: detail ? t('status_scope_admin') : t('status_scope_staff') }),
-    rows.length ? table(headers, rows, { label: t('nav_status') }) : el('p', { class: 'empty', text: t('status_items_empty') }),
+    rows.length ? table(headers, rows, { label: t('nav_status'), stack: true, keep: [1] }) : el('p', { class: 'empty', text: t('status_items_empty') }),
   );
 }
 
@@ -552,6 +617,207 @@ async function viewMe(main) {
 }
 
 // ---------- 관리 ----------
+// ---------- CCTV (R3) ----------
+// 영상은 같은 출처(/api/cctv/:id/play)로만 받는다 → 보안 헤더(CSP)를 그대로 둔다.
+const CCTV_KIND_KEY = { mp4: 'cctv_kind_mp4', snapshot: 'cctv_kind_snapshot' };
+const SNAPSHOT_MS = 2000;
+// 한 번에 재생기 하나. 현재 재생기의 정지 함수만 들고 있다 — 떼어낸 옛 재생기의 이벤트가 새 재생기를 건드리지 못하게.
+let cctvStop = null;
+let cctvReopenTimer = null;
+// 열기 흐름의 세대 번호. 새 카메라를 열면 올라가고, 옛 흐름은 자기 번호가 아니면 아무것도 하지 않는다
+// (늦게 돌아온 /open 이나 옛 예약이 지금 보는 카메라를 덮거나 타이머를 훔치지 못하게).
+let cctvGen = 0;
+
+function stopCctv() {
+  if (cctvReopenTimer !== null) {
+    window.clearTimeout(cctvReopenTimer);
+    cctvReopenTimer = null;
+  }
+  if (cctvStop !== null) {
+    const stop = cctvStop;
+    cctvStop = null;
+    stop();
+  }
+}
+
+function cctvStateBadge(cam) {
+  if (cam.status !== 'active') return badge('muted', t('cctv_not_connected'), '○');
+  if (cam.playable !== true) return badge('warn', t('cctv_unusable'), '!');
+  return badge('state-up', t('cctv_ready'), '✓');
+}
+
+// playPath 는 /open 이 돌려준 값(열람 토큰 포함)이다. 화면이 직접 주소를 만들지 않는다.
+function cctvPlayer(cam, playPath, onError) {
+  stopCctv();
+  // 재생기마다 자기 타이머·자기 생사 표시를 가진다. 떼어낸 뒤 늦게 도착한 load/error 는 무시된다.
+  // 정지 함수는 **하나** — 어느 경로로 멈추든 타이머와 매체 자원을 같이 놓는다.
+  let live = true;
+  let timer = null;
+  let media = null;
+  const stop = () => {
+    live = false;
+    if (timer !== null) { window.clearTimeout(timer); timer = null; }
+    if (media && media.tagName === 'VIDEO') { media.pause(); media.removeAttribute('src'); media.load(); }
+    media = null;
+  };
+  cctvStop = stop;
+  const src = playPath;
+  const bust = () => `${src}${src.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  const failed = (e) => { if (!live) return; stop(); onError(e); };
+  if (cam.stream_kind === 'snapshot') {
+    const img = el('img', { class: 'cctv-media', alt: `${t('cctv_snapshot_alt')} — ${cam.name_ko}`, src: bust() });
+    // 앞 그림이 다 온 뒤에 다음을 청한다 — 회선이 느릴 때 요청이 겹쳐 쌓이지 않게
+    const next = () => {
+      if (!live || !img.isConnected) return stop();
+      timer = window.setTimeout(() => { if (live) img.src = bust(); }, SNAPSHOT_MS);
+    };
+    img.addEventListener('load', next);
+    img.addEventListener('error', failed);
+    return img;
+  }
+  // 떼어내는 것만으로는 진행형 스트림이 안 끊긴다 — stop() 이 매체 자원을 실제로 놓는다
+  const video = el('video', { class: 'cctv-media', src, controls: true, autoplay: true, muted: true, playsinline: true });
+  video.muted = true;
+  video.addEventListener('error', failed);
+  media = video;
+  return video;
+}
+
+async function viewCctv(main) {
+  stopCctv();
+  let data;
+  try {
+    data = await api('/api/cctv');
+  } catch (err) {
+    put(main, el('h1', { class: 'page-title', text: t('cctv_title') }), errorBox(err, () => render()));
+    return;
+  }
+  const cams = Array.isArray(data.cameras) ? data.cameras : null;
+  if (!cams) {
+    put(main, errorBox(new ApiError(200, 'invalid_response'), () => render()));
+    return;
+  }
+  const stage = el('div', { class: 'cctv-stage' });
+  const warnAlert = (key) => el('div', { class: 'alert alert-warn', role: 'status' },
+    el('span', { class: 'alert-icon', 'aria-hidden': 'true', text: '!' }),
+    el('div', { class: 'alert-body' }, el('p', { text: t(key) })));
+  const notice = data.enabled !== true ? warnAlert('cctv_off') : data.relay_configured !== true ? warnAlert('cctv_relay_missing') : null;
+
+  const rows = cams.map((cam) => {
+    const kindKey = CCTV_KIND_KEY[cam.stream_kind] || 'cctv_kind_unknown';
+    const open = el('button', {
+      // 볼 수 없는 카메라는 눈에 띄는 색을 쓰지 않는다 (누를 수 있는 것처럼 보이지 않게)
+      class: cam.playable === true ? 'btn btn-primary' : 'btn btn-secondary',
+      type: 'button',
+      disabled: cam.playable !== true,
+      text: t('cctv_open'),
+      onclick: async () => {
+        open.disabled = true;
+        const gen = ++cctvGen;
+        let opened;
+        try {
+          opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
+        } catch (err) {
+          open.disabled = false;
+          if (!stage.isConnected || gen !== cctvGen) return;
+          stopCctv(); // 보고 있던 다른 카메라가 있으면 먼저 끊는다 — 무대만 갈아엎으면 스트림이 살아남는다
+          put(stage, inlineError(err));
+          return;
+        }
+        open.disabled = false;
+        // 기다리는 동안 화면을 떠났거나 다른 카메라를 열었으면 시작하지 않는다 — 떼어진 <video> 도 자동재생으로 중계 연결을 연다
+        if (!stage.isConnected || gen !== cctvGen) return;
+        if (typeof opened.play_path !== 'string') {
+          // 토큰 없는 경로는 서버가 반드시 거부한다 → 재생 실패로 위장하지 않고 응답 형식 오류로 알린다
+          stopCctv();
+          put(stage, inlineError(new ApiError(200, 'invalid_response')));
+          return;
+        }
+        const showFail = () => { stopCctv(); put(stage, el('p', { class: 'empty', text: t('cctv_play_failed') })); };
+        // 열람 토큰(15분)은 서버가 준 expires_at 으로 안다 → 지나기 30초 전에 다시 열어(열람 기록 1건 더) 끊김 없이 잇는다.
+        // <img>/<video> 의 error 에는 상태 코드가 없으므로, 만료 전의 오류는 잠깐 끊긴 것으로 보고 2번까지 다시 청한다.
+        // 만료 시각은 서버 시계로 온다. 브라우저 시계와 어긋나도 되게, **수명(expires_at − opened_at)** 을 받은 시각에 더해 잰다.
+        const localExpiry = (o) => {
+          const ttl = Date.parse(o.expires_at) - Date.parse(o.opened_at);
+          return Number.isFinite(ttl) && ttl > 0 ? Date.now() + ttl : NaN;
+        };
+        let currentPath = opened.play_path;
+        let expiresAt = localExpiry(opened);
+        let retries = 0;
+        let reopenedOnFail = false;
+        let closed = false; // 닫기를 눌렀으면 기다리던 /open 이 돌아와도 다시 끼워 넣지 않는다
+        const alive = () => stage.isConnected && !closed && gen === cctvGen;
+        // 예약 타이머는 한 개만 — 새로 걸기 전에 반드시 지운다 (지우지 않으면 닫은 뒤에도 옛 예약이 살아 다시 연다)
+        const armTimer = (fn, ms) => {
+          if (cctvReopenTimer !== null) window.clearTimeout(cctvReopenTimer);
+          cctvReopenTimer = window.setTimeout(fn, ms);
+        };
+        const start = () => {
+          put(stage,
+            el('div', { class: 'section-head' },
+              el('h2', { text: `${cam.name_ko} · ${cam.site}` }),
+              el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { closed = true; stopCctv(); put(stage); } })),
+            cctvPlayer(cam, currentPath, onFail));
+          scheduleReopen();
+        };
+        function scheduleReopen() {
+          if (!Number.isFinite(expiresAt)) return;
+          // 만료 30초 전에 다시 연다. 수명이 이상하게 짧아도 1분보다 자주 열지 않는다 (열람 기록이 초 단위로 쌓이지 않게)
+          armTimer(reopen, Math.max(60 * 1000, expiresAt - Date.now() - 30 * 1000));
+        }
+        async function reopen(rebuild = cam.stream_kind !== 'mp4') {
+          if (!alive()) return stopCctv();
+          try {
+            const again = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/open`, { method: 'POST', body: {} });
+            if (!alive()) return stopCctv();
+            if (typeof again.play_path !== 'string') return showFail();
+            currentPath = again.play_path;
+            expiresAt = localExpiry(again);
+            retries = 0;
+            // mp4 는 열려 있는 진행형 스트림을 그대로 둔다 — 토큰은 요청 시작 때만 확인되므로 새 토큰은 다음 오류 때부터 쓴다.
+            // 사진 방식은 매번 새 요청이라 새 토큰으로 다시 만든다.
+            if (rebuild) start();
+            else scheduleReopen();
+          } catch (err) {
+            if (!alive()) return stopCctv();
+            // /open 은 상태 코드가 있다 — 재생 실패로 뭉뚱그리지 않고 원인을 보여 준다
+            stopCctv();
+            put(stage, inlineError(err));
+          }
+        }
+        function onFail() {
+          if (!alive()) return stopCctv();
+          if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) return reopen(true);
+          if (retries < 2) { retries++; armTimer(start, 1500 * retries); return; }
+          // 만료 전인데 계속 실패 — 토큰·카메라 상태를 서버에서 새로 확인해 본다 (한 번)
+          if (!reopenedOnFail) { reopenedOnFail = true; return reopen(true); }
+          showFail();
+        }
+        start();
+        stage.scrollIntoView({ block: 'nearest' });
+      },
+    });
+    return el('tr', {},
+      el('td', { text: cam.name_ko }),
+      el('td', { text: cam.site }),
+      el('td', { text: t(kindKey) }),
+      el('td', {}, cctvStateBadge(cam)),
+      el('td', {}, open));
+  });
+
+  put(main,
+    el('h1', { class: 'page-title', text: t('cctv_title') }),
+    el('p', { class: 'lead', text: t('cctv_intro') }),
+    notice,
+    staleBanner(),
+    stage,
+    rows.length
+      ? table([t('cctv_col_name'), t('cctv_col_site'), t('cctv_col_kind'), t('cctv_col_state'), t('cctv_col_action')], rows, { label: t('cctv_title'), stack: true, keep: [3, 4] })
+      : el('p', { class: 'empty', text: t('cctv_empty') }),
+    el('p', { class: 'note', text: t('cctv_audit_note') }),
+  );
+}
+
 async function viewAdmin(main) {
   if (!state.me.is_admin) {
     put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), errorBox(new ApiError(403, 'forbidden')));
@@ -559,9 +825,77 @@ async function viewAdmin(main) {
   }
   const usersBox = el('section', { class: 'panel' });
   const tokenBox = el('section', { class: 'panel' });
+  const cctvBox = el('section', { class: 'panel' });
   const auditBox = el('section', { class: 'panel' });
-  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, tokenBox, auditBox);
-  await Promise.all([renderUsers(usersBox), renderTokens(tokenBox), renderAudit(auditBox)]);
+  put(main, el('h1', { class: 'page-title', text: t('nav_admin') }), staleBanner(), usersBox, tokenBox, cctvBox, auditBox);
+  await Promise.all([renderUsers(usersBox), renderTokens(tokenBox), renderCctvAdmin(cctvBox), renderAudit(auditBox)]);
+}
+
+// R3 CCTV: 카메라 등록. 중계 서버 **안에서의 경로만** 넣는다 — 서버 주소·카메라 계정은 여기 없다.
+async function renderCctvAdmin(box) {
+  put(box, sectionHead(t('cctv_admin_title')), loading());
+  let data;
+  try {
+    data = await api('/api/admin/cctv');
+  } catch (err) {
+    put(box, sectionHead(t('cctv_admin_title')), errorBox(err, () => renderCctvAdmin(box)));
+    return;
+  }
+  const reload = () => renderCctvAdmin(box);
+  const cams = Array.isArray(data.cameras) ? data.cameras : [];
+  const rows = cams.map((cam) =>
+    el('tr', {},
+      el('td', {}, el('code', { text: cam.camera_id })),
+      el('td', { text: cam.name_ko }),
+      el('td', { text: cam.site }),
+      el('td', { text: t(CCTV_KIND_KEY[cam.stream_kind] || 'cctv_kind_unknown') }),
+      el('td', {}, cctvStateBadge(cam)),
+      el('td', { class: 'num', text: String(cam.sort ?? 0) }),
+      el('td', { text: fmtTime(cam.updated_at) })),
+  );
+  put(box,
+    sectionHead(t('cctv_admin_title')),
+    el('p', { class: 'hint', text: t('cctv_admin_hint') }),
+    rows.length
+      ? table([t('cctv_col_id'), t('cctv_col_name'), t('cctv_col_site'), t('cctv_col_kind'), t('cctv_col_state'), t('cctv_col_sort'), t('cctv_col_updated')], rows, { label: t('cctv_admin_title'), stack: true, keep: [1, 4] })
+      : el('p', { class: 'empty', text: t('cctv_admin_empty') }),
+    el('div', { class: 'form-grid' }, addCameraForm(reload)),
+  );
+}
+
+function addCameraForm(reload) {
+  const id = el('input', { type: 'text', required: true, maxlength: '64', pattern: '[a-z0-9-]{2,64}', autocomplete: 'off' });
+  const name = el('input', { type: 'text', required: true, maxlength: '100' });
+  const site = el('input', { type: 'text', required: true, maxlength: '64' });
+  const kind = el('select', { required: true },
+    el('option', { value: 'snapshot', text: t('cctv_kind_snapshot') }),
+    el('option', { value: 'mp4', text: t('cctv_kind_mp4') }));
+  const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' }); // 비우면 이전 경로 유지
+  const disconnect = el('input', { type: 'checkbox' });
+  const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', placeholder: '0' }); // 비우면 이전 값 유지
+  const reason = el('input', { type: 'text', maxlength: '500' });
+  return formShell(
+    t('form_add_camera'),
+    [
+      field(t('field_camera_id'), id), field(t('field_camera_name'), name), field(t('field_site'), site),
+      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_disconnect'), disconnect), field(t('field_sort'), sort),
+      field(t('field_reason'), reason),
+    ],
+    t('submit_add_camera'),
+    async () => {
+      // 경로: 적으면 그 값, "미연결로 저장" 이면 null, 둘 다 아니면 보내지 않아 이전 경로가 유지된다 (새 등록이면 미연결)
+      const p = optionalText(path.value);
+      const body = { camera_id: id.value.trim(), name_ko: name.value.trim(), site: site.value.trim(), stream_kind: kind.value };
+      if (disconnect.checked) body.stream_path = null;
+      else if (p) body.stream_path = p;
+      if (sort.value !== '') body.sort = Number(sort.value);
+      const r = optionalText(reason.value);
+      if (r) body.reason = r;
+      await api('/api/admin/cctv', { method: 'POST', body });
+      toast(t('saved'));
+      reload();
+    },
+  );
 }
 
 // WP3: 연동 토큰 상태. 토큰 값·암호문은 서버가 내려보내지 않는다.

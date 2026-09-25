@@ -20,6 +20,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -44,6 +45,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -68,6 +70,32 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
+      "name": "status-admin-ko-390",
+      "file": "test/screens/status-admin-ko-390.png",
+      "viewport": "390x844",
+      "user": "admin",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "iframes": 0,
+      "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -92,6 +120,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -116,6 +145,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -140,6 +170,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -164,6 +195,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -188,6 +220,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -212,6 +245,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -238,6 +272,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [
         "!불러오지 못했습니다서버 오류가 발생했습니다.오류 코드: internal_error다시 시도"
       ],
@@ -266,6 +301,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [
         "!불러오지 못했습니다허브에 등록되지 않은 계정입니다. 관리자에게 문의하세요.오류 코드: not_registered다시 시도"
       ],
@@ -292,6 +328,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": false,
+      "cctvTabVisible": false,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -316,6 +353,7 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
@@ -340,12 +378,116 @@
       "greyText": 0,
       "iframes": 0,
       "adminTabVisible": true,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
+      "name": "cctv-admin-ko-1440",
+      "file": "test/screens/cctv-admin-ko-1440.png",
+      "viewport": "1440x900",
+      "user": "admin",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "iframes": 0,
+      "adminTabVisible": true,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
+      "name": "cctv-admin-ko-390",
+      "file": "test/screens/cctv-admin-ko-390.png",
+      "viewport": "390x844",
+      "user": "admin",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "iframes": 0,
+      "adminTabVisible": true,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
+      "name": "cctv-off-ko-1440",
+      "file": "test/screens/cctv-off-ko-1440.png",
+      "viewport": "1440x900",
+      "user": "admin",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "iframes": 0,
+      "adminTabVisible": true,
+      "cctvTabVisible": true,
       "alerts": [],
       "logoRight": true,
       "problems": []
     }
   ],
   "flows": [
+    {
+      "name": "cctv_play_flow",
+      "image": {
+        "src": "/api/cctv/icheon-vfarm/play?s=3ac1095b-1157-4ab7-9009-cece86b69d23&t=1789909674361",
+        "w": 640,
+        "h": 360,
+        "origin": "http://127.0.0.1:8801"
+      },
+      "audit": {
+        "action": "cctv_view_open",
+        "target": "camera:icheon-vfarm"
+      },
+      "external_requests": [],
+      "console_errors": [],
+      "problems": []
+    },
+    {
+      "name": "cctv_mobile_actions",
+      "visible": {
+        "button": true,
+        "badge": true,
+        "hidden_cells": 2
+      },
+      "expanded_hidden": 0,
+      "overflow": 0,
+      "console_errors": [],
+      "problems": []
+    },
     {
       "name": "revoke_flow",
       "revoked_badges_before": 0,
@@ -357,7 +499,7 @@
         "cls": "card",
         "text": "하우스 견적firmmit-quote.",
         "outline": "solid 3px rgb(51, 101, 255)",
-        "tabs": 13
+        "tabs": 14
       },
       "console_errors": [],
       "staff_admin_view": "!불러오지 못했습니다이 작업을 할 권한이 없습니다.오류 코드: forbidden",
