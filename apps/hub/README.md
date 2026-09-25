@@ -218,7 +218,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
 
 ### 4.1 Cron 계획과 계정 한도
 
-현재 `wrangler.jsonc` 의 `triggers.crons` = `["*/5 * * * *", "*/15 * * * *"]`.
+현재 `wrangler.jsonc` 의 `triggers.crons` = `["*/5 * * * *", "*/15 * * * *", "0 * * * *"]`.
 
 | 상태 | 주기 | 내용 |
 |---|---|---|
