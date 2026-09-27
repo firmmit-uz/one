@@ -70,11 +70,11 @@ await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.invalid'
 
 // R3 CCTV 화면 (가짜 카메라 — 실제 카메라·중계 서버 아님)
 const cam = sqlite.prepare(
-  'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
 );
-cam.run('akis-gh1', 'AKIS 온실 1동', '타슈켄트 AKIS', 'mp4', '/live/akis-gh1.mp4', 'active', 10, now.toISOString(), now.toISOString());
-cam.run('akis-gh2', 'AKIS 온실 2동', '타슈켄트 AKIS', 'snapshot', '/snapshot/akis-gh2.jpg', 'active', 20, now.toISOString(), now.toISOString());
-cam.run('akis-nursery', 'AKIS 육묘장', '타슈켄트 AKIS', 'mp4', null, 'not_connected', 30, now.toISOString(), now.toISOString());
+cam.run('akis-gh1', 'AKIS 온실 1동', '타슈켄트 AKIS', 'mp4', '/live/akis-gh1.mp4', '/api/akis-gh1/start/{from}/end/{to}/clip.mp4', 'active', 10, now.toISOString(), now.toISOString());
+cam.run('akis-gh2', 'AKIS 온실 2동', '타슈켄트 AKIS', 'snapshot', '/snapshot/akis-gh2.jpg', null, 'active', 20, now.toISOString(), now.toISOString());
+cam.run('akis-nursery', 'AKIS 육묘장', '타슈켄트 AKIS', 'mp4', null, null, 'not_connected', 30, now.toISOString(), now.toISOString());
 
 // 화면 확인용 설정. CCTV=off 로 두면 "꺼짐" 안내 화면을 찍을 수 있다.
 const CCTV_ON = process.env.CCTV !== 'off';

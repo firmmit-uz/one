@@ -123,6 +123,12 @@ const MUTANTS = [
     /  for \(const k of PASS_RESPONSE_HEADERS\) \{\n[\s\S]*?\n  \}\n/,
     '  upstream.headers.forEach((v, k) => out.set(k, v));\n',
   ],
+  ['cctv: 다시보기 틀에 {from}{to} 요구 끔', 'src/cctv.ts', "if (v.split('{from}').length !== 2 || v.split('{to}').length !== 2) return false; // MUTATION:CCTV-CLIP-TEMPLATE", ''],
+  ['cctv: 구간 길이 상한 끔', 'src/cctv.ts', "if (t - f > CLIP_MAX_MS) return 'clip_too_long'; // MUTATION:CCTV-CLIP-MAX", ''],
+  ['cctv: 미래 구간 허용', 'src/cctv.ts', "if (t > now.getTime()) return 'clip_in_future'; // MUTATION:CCTV-CLIP-FUTURE", ''],
+  ['cctv: 구간 토큰을 구간과 대조하지 않음', 'src/cctv.ts', "sess.clip_from !== from || sess.clip_to !== to // MUTATION:CCTV-CLIP-SESSION", 'false // MUTATION:CCTV-CLIP-SESSION'],
+  ['cctv: 구간 토큰으로 실시간 재생 허용', 'src/cctv.ts', "if (sess.clip_from !== null) throw new ApiError(409, 'view_not_opened', 'Clip session cannot play live'); // MUTATION:CCTV-CLIP-TOKEN-LIVE", ''],
+  ['cctv: 목록의 다시보기 표시가 틀 검사를 건너뜀', 'src/cctv.ts', "const playback = ready && status === 'active' && isSafePlaybackPath(row.playback_path); // MUTATION:CCTV-PLAYBACK-FLAG", "const playback = ready && status === 'active' && row.playback_path !== null; // MUTATION:CCTV-PLAYBACK-FLAG"],
   ['cctv: 표 제약(미연결↔경로 짝) 제거', 'migrations/0007_cctv.sql', /  CHECK \(\(status = 'not_connected'[\s\S]*?stream_path IS NOT NULL\)\)/, '  CHECK (1 = 1)'],
 ];
 

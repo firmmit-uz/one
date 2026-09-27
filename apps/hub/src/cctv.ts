@@ -156,6 +156,8 @@ export interface CameraRow {
   site: string;
   stream_kind: string;
   stream_path: string | null;
+  /** 구간 클립 경로 틀 ({from} {to} = 유닉스 초). NULL = 다시보기 없음 */
+  playback_path: string | null;
   status: string;
   sort: number;
   created_at: string;
@@ -170,6 +172,8 @@ export interface CameraView {
   status: CameraStatus;
   /** 지금 실제로 볼 수 있는가 (하나라도 어긋나면 false) */
   playable: boolean;
+  /** 녹화 다시보기를 열 수 있는가 (중계 준비 + 연결 + 다시보기 경로 틀) */
+  playback: boolean;
 }
 
 export type CctvDeps = { fetch: (input: string, init?: RequestInit) => Promise<Response>; idleTimeoutMs?: number; connectTimeoutMs?: number };
@@ -254,10 +258,70 @@ export function streamPathValidator(value: unknown, field: string): string {
   return value;
 }
 
+// ---------- 녹화 다시보기 (R3 3단계) ----------
+
+/** 한 번에 여는 구간 상한. 길게 보려면 여러 번 연다 (열람 기록도 그만큼 남는다). */
+export const CLIP_MAX_MS = 10 * 60 * 1000;
+/** 이보다 오래된 구간은 열지 않는다 — 중계 쪽 보존 기간(README 4.3)과 맞춘다. */
+export const CLIP_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** `{from}` `{to}` 가 정확히 한 번씩 들어간, 값을 넣었을 때 안전한 경로가 되는 틀인가 */
+export function isSafePlaybackPath(v: unknown): v is string {
+  if (typeof v !== 'string') return false;
+  if (v.split('{from}').length !== 2 || v.split('{to}').length !== 2) return false; // MUTATION:CCTV-CLIP-TEMPLATE
+  // 실제로 들어갈 값(유닉스 초, 10자리)으로 채워 본 결과를 실시간 경로와 같은 규칙으로 검사한다
+  return isSafeStreamPath(v.replace('{from}', '1700000000').replace('{to}', '1700000600'));
+}
+
+export function playbackPathValidator(value: unknown, field: string): string {
+  if (!isSafePlaybackPath(value)) throw new ValidationError('invalid_playback_path', field);
+  return value;
+}
+
+/** 구간 시각: 형식 고정 (YYYY-MM-DDTHH:MM:SS.sssZ) */
+export function isoInstantValidator(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !ISO_INSTANT_RE.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new ValidationError('invalid_instant', field);
+  }
+  return value;
+}
+
+export type ClipRangeFail = 'clip_range_invalid' | 'clip_too_long' | 'clip_in_future' | 'clip_too_old';
+
+/** from < to · 길이 상한 · 미래 금지 · 보존 기간 안 */
+export function checkClipRange(from: string, to: string, now: Date): ClipRangeFail | null {
+  const f = Date.parse(from);
+  const t = Date.parse(to);
+  if (!(f < t)) return 'clip_range_invalid';
+  if (t - f > CLIP_MAX_MS) return 'clip_too_long'; // MUTATION:CCTV-CLIP-MAX
+  if (t > now.getTime()) return 'clip_in_future'; // MUTATION:CCTV-CLIP-FUTURE
+  if (f < now.getTime() - CLIP_LOOKBACK_MS) return 'clip_too_old';
+  return null;
+}
+
+const epochSec = (iso: string) => String(Math.floor(Date.parse(iso) / 1000));
+
+export type ClipCheck =
+  | { ok: true; url: string; kind: 'mp4'; authHeaders: [string, string][] }
+  | { ok: false; code: Exclude<PlayCheck, { ok: true }>['code'] | 'playback_not_configured' | ClipRangeFail };
+
+/** 다시보기 전 확인 한 군데. /clip/open 과 /clip 이 같은 결과만 믿는다. */
+export function clipTarget(env: Env, row: CameraRow, from: string, to: string, now: Date): ClipCheck {
+  const relay = relayCheck(env);
+  if (!relay.ok) return { ok: false, code: relay.code };
+  if (row.status !== 'active') return { ok: false, code: 'not_connected' };
+  if (!isSafePlaybackPath(row.playback_path)) return { ok: false, code: 'playback_not_configured' };
+  const bad = checkClipRange(from, to, now);
+  if (bad !== null) return { ok: false, code: bad };
+  const path = row.playback_path.replace('{from}', epochSec(from)).replace('{to}', epochSec(to));
+  return { ok: true, url: `${relay.origin}${path}`, kind: 'mp4', authHeaders: relay.authHeaders };
+}
+
 export async function listCameras(db: D1Database): Promise<CameraRow[]> {
   const res = await db
     .prepare(
-      'SELECT camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at FROM cctv_cameras ORDER BY sort ASC, camera_id ASC',
+      'SELECT camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at FROM cctv_cameras ORDER BY sort ASC, camera_id ASC',
     )
     .all<CameraRow>();
   return res.results ?? [];
@@ -267,7 +331,7 @@ export async function getCamera(db: D1Database, cameraId: string): Promise<Camer
   return (
     (await db
       .prepare(
-        'SELECT camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?',
+        'SELECT camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?',
       )
       .bind(cameraId)
       .first<CameraRow>()) ?? null
@@ -283,7 +347,8 @@ export function toView(row: CameraRow, ready: boolean): CameraView {
   const status: CameraStatus = row.status === 'active' ? 'active' : 'not_connected';
   const playable =
     ready && status === 'active' && kind !== null && isSafeStreamPath(row.stream_path); // MUTATION:CCTV-PLAYABLE
-  return { camera_id: row.camera_id, name_ko: row.name_ko, site: row.site, stream_kind: kind, status, playable };
+  const playback = ready && status === 'active' && isSafePlaybackPath(row.playback_path); // MUTATION:CCTV-PLAYBACK-FLAG
+  return { camera_id: row.camera_id, name_ko: row.name_ko, site: row.site, stream_kind: kind, status, playable, playback };
 }
 
 /** 목록 응답의 공통 부분. `/api/cctv` 와 `/api/admin/cctv` 가 같은 것을 쓴다 — 두 화면이 `playable` 에서 어긋나지 않게. */
@@ -311,12 +376,17 @@ export function playTarget(env: Env, row: CameraRow): PlayCheck {
 // 재생 전 확인에 걸리면 전부 409 (상태가 맞지 않음). 404 는 카메라가 없을 때만 따로 낸다.
 const FAIL_STATUS = 409 as const;
 
-const FAIL_MESSAGE: Record<Exclude<PlayCheck, { ok: true }>['code'], string> = {
+const FAIL_MESSAGE: Record<Exclude<ClipCheck, { ok: true }>['code'] | 'unsupported_stream', string> = {
   cctv_disabled: 'CCTV viewing is disabled',
   relay_not_configured: 'CCTV relay is not configured',
   relay_auth_misconfigured: 'CCTV relay credentials are not configured correctly',
   not_connected: 'Camera is not connected',
   unsupported_stream: 'Camera stream is not usable',
+  playback_not_configured: 'Camera has no recording playback path',
+  clip_range_invalid: 'Clip range must start before it ends',
+  clip_too_long: 'Clip range is longer than allowed',
+  clip_in_future: 'Clip range ends in the future',
+  clip_too_old: 'Clip range is older than the retention window',
 };
 
 /**
@@ -397,6 +467,8 @@ interface ViewSessionRow {
   camera_id: string;
   actor_email: string;
   expires_at: string;
+  clip_from: string | null;
+  clip_to: string | null;
 }
 
 export function cctvRoutes(deps: CctvDeps) {
@@ -462,8 +534,8 @@ export function cctvRoutes(deps: CctvDeps) {
     // 카메라 행과 열람 토큰을 한 번의 왕복으로 읽는다 — 사진 방식은 2초마다 오는 요청이다
     const db = c.env.DB;
     const [camRes, sessRes] = await db.batch([
-      db.prepare('SELECT camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?').bind(id),
-      db.prepare('SELECT camera_id, actor_email, expires_at FROM cctv_view_sessions WHERE token = ?').bind(token),
+      db.prepare('SELECT camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?').bind(id),
+      db.prepare('SELECT camera_id, actor_email, expires_at, clip_from, clip_to FROM cctv_view_sessions WHERE token = ?').bind(token),
     ]);
     const row = (camRes?.results?.[0] as CameraRow | undefined) ?? null;
     if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
@@ -477,6 +549,8 @@ export function cctvRoutes(deps: CctvDeps) {
     if (sess === null || sess.camera_id !== id || sess.actor_email !== actor || sess.expires_at <= nowIso) { // MUTATION:CCTV-VIEW-SESSION
       throw new ApiError(409, 'view_not_opened', 'Open the camera first');
     }
+    // 구간용 토큰으로 실시간을 열 수 없다 (열람 기록의 종류가 어긋난다)
+    if (sess.clip_from !== null) throw new ApiError(409, 'view_not_opened', 'Clip session cannot play live'); // MUTATION:CCTV-CLIP-TOKEN-LIVE
 
     console.log(
       JSON.stringify({
@@ -487,6 +561,82 @@ export function cctvRoutes(deps: CctvDeps) {
         stream_kind: target.kind,
       }),
     );
+    return proxyStream(target, c.req.header('Range') ?? null, deps);
+  });
+
+  // ---------- 녹화 다시보기 (R3 3단계) ----------
+  // 구간 열람 시작: 감사기록(구간 포함) + 구간에 묶인 열람 토큰을 **한 batch** 로.
+  r.post('/:camera_id/clip/open', async (c) => {
+    const id = cameraIdParam(c.req.param('camera_id'));
+    const body = objectOf({
+      from: { v: isoInstantValidator },
+      to: { v: isoInstantValidator },
+      reason: { v: str({ max: 500 }), optional: true },
+    })(await readJsonBody(c.req.raw), '');
+    const db = c.env.DB;
+    const row = await getCamera(db, id);
+    if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
+    const nowDate = c.get('now');
+    const target = clipTarget(c.env, row, body.from, body.to, nowDate);
+    if (!target.ok) throw new ApiError(FAIL_STATUS, target.code, FAIL_MESSAGE[target.code]);
+    const now = nowDate.toISOString();
+    const expires = new Date(nowDate.getTime() + VIEW_SESSION_TTL_MS).toISOString();
+    const actor = c.get('principal').email;
+    const token = crypto.randomUUID();
+    await runAudited(db, async () => ({
+      stmts: [
+        db.prepare('DELETE FROM cctv_view_sessions WHERE expires_at <= ?').bind(now),
+        db
+          .prepare('INSERT INTO cctv_view_sessions (token, camera_id, actor_email, opened_at, expires_at, clip_from, clip_to) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .bind(token, id, actor, now, expires, body.from, body.to),
+      ],
+      entry: {
+        ts: now,
+        actor_email: actor,
+        action: 'cctv_clip_open',
+        target: `camera:${id}`,
+        // 어느 구간을 봤는지는 남긴다 (녹화 열람은 실시간보다 무겁다). 주소·경로·토큰은 남기지 않는다.
+        detail: { site: row.site, from: body.from, to: body.to, seconds: Math.round((Date.parse(body.to) - Date.parse(body.from)) / 1000), reason: body.reason ?? null, expires_at: expires },
+        request_id: c.get('requestId'),
+      },
+    }));
+    return c.json({
+      camera_id: id,
+      from: body.from,
+      to: body.to,
+      play_path: `/api/cctv/${id}/clip?s=${token}&from=${encodeURIComponent(body.from)}&to=${encodeURIComponent(body.to)}`,
+      opened_at: now,
+      expires_at: expires,
+    });
+  });
+
+  // 구간 클립 전달. 토큰이 그 카메라·그 사람·그 구간에 묶여 있어야 한다.
+  r.get('/:camera_id/clip', async (c) => {
+    if (c.req.method !== 'GET') throw new ApiError(405, 'method_not_allowed', 'Use GET');
+    const id = cameraIdParam(c.req.param('camera_id'));
+    const token = c.req.query('s') ?? '';
+    const from = isoInstantValidator(c.req.query('from'), 'from');
+    const to = isoInstantValidator(c.req.query('to'), 'to');
+    const db = c.env.DB;
+    const [camRes, sessRes] = await db.batch([
+      db.prepare('SELECT camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at FROM cctv_cameras WHERE camera_id = ?').bind(id),
+      db.prepare('SELECT camera_id, actor_email, expires_at, clip_from, clip_to FROM cctv_view_sessions WHERE token = ?').bind(token),
+    ]);
+    const row = (camRes?.results?.[0] as CameraRow | undefined) ?? null;
+    if (row === null) throw new ApiError(404, 'not_found', 'Camera not found');
+    const nowDate = c.get('now');
+    const target = clipTarget(c.env, row, from, to, nowDate);
+    if (!target.ok) throw new ApiError(FAIL_STATUS, target.code, FAIL_MESSAGE[target.code]);
+    const sess = (sessRes?.results?.[0] as ViewSessionRow | undefined) ?? null;
+    const nowIso = nowDate.toISOString();
+    const actor = c.get('principal').email;
+    if (
+      sess === null || sess.camera_id !== id || sess.actor_email !== actor || sess.expires_at <= nowIso ||
+      sess.clip_from !== from || sess.clip_to !== to // MUTATION:CCTV-CLIP-SESSION
+    ) {
+      throw new ApiError(409, 'view_not_opened', 'Open the clip first');
+    }
+    console.log(JSON.stringify({ event: 'cctv_clip', request_id: c.get('requestId'), actor, camera_id: id, from, to }));
     return proxyStream(target, c.req.header('Range') ?? null, deps);
   });
 

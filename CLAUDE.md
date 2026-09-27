@@ -12,7 +12,7 @@ Phase 1.5 (WP1 그룹 동기화 · WP2 KPI 게이트웨이 + 공통 ID 검사기
 - 계정 로그인·배포·원격 변경: `wrangler login` · `wrangler deploy`(`--dry-run` 제외) · `wrangler d1 … --remote` · `wrangler secret put` · `wrangler dev --remote`
 - 실제 외부 API 호출 (cafe24 · 네이버 · Cloudflare API · Google · Slack · Telegram · 카카오) — 가짜 서버·fixture만
 - 비밀값·실제 계정 ID·직원 실명과 이메일을 코드·로그·커밋·캡처에 넣기 (`<...>` 자리표시자, 시험 이메일은 `@example.invalid`)
-- 기존 마이그레이션 `0001`–`0003` 수정. 새 번호는 고정: `0004` WP1 · `0005` WP2 · `0006` WP3
+- 기존 마이그레이션 `0001`–`0003` 수정. 새 번호는 고정: `0004` WP1 · `0005` WP2 · `0006` WP3 · `0007`–`0008` R3 CCTV · `0009` R3 다시보기
 - 인증·권한·CSRF·감사 트리거·보안 헤더 약화, 기존 시험 삭제·완화
 - 확인 안 된 주소를 추정해서 넣기, 미연결을 "연결됨"으로 표시
 - 직원 허브와 TV 쇼룸 사이에 코드·데이터·세션·D1 공유
@@ -30,12 +30,12 @@ Phase 1.5 (WP1 그룹 동기화 · WP2 KPI 게이트웨이 + 공통 ID 검사기
 export WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false
 npm ci                                # Node 22.13 이상
 npm test -w packages/contracts        # 85건(정상20·거부65) 불일치 0 · 변이 60/60 · 의미 17/17 · Worker 17/17 · ID 21/21
-npm test -w apps/hub                  # 12파일 · 317/317        (기준선 11파일 · 247/247)
+npm test -w apps/hub                  # 12파일 · 324/324        (기준선 11파일 · 247/247)
 npm run typecheck -w apps/hub         # 오류 0
-npm run test:mutation -w apps/hub     # 62/62 검출 · 미검출 0    (기준선 27/27)
+npm run test:mutation -w apps/hub     # 68/68 검출 · 미검출 0    (기준선 27/27)
 npm run test:bundle -w apps/hub       # 9/9 · 금지 구문 0건
-npm run build:dry -w apps/hub         # 약 623.6 KiB            (기준선 약 605.9 KiB — 배포 아님, 크기는 기록만)
-npm run test:ui -w apps/hub           # 화면 21장 + 흐름 3 · 콘솔 오류 0  (기준선 14장 + 흐름 1) (Python Playwright 필요)
+npm run build:dry -w apps/hub         # 약 630.2 KiB            (기준선 약 605.9 KiB — 배포 아님, 크기는 기록만)
+npm run test:ui -w apps/hub           # 화면 22장 + 흐름 3 · 콘솔 오류 0  (기준선 14장 + 흐름 1) (Python Playwright 필요)
 npm test -w apps/showroom             # 38/38
 npm run test:ui -w apps/showroom      # 27/27 · 캡처 7장 · 외부 요청 0건
 ```

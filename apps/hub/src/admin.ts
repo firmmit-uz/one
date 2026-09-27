@@ -13,7 +13,7 @@ import {
   snapshotDiff,
   snapshotReplaceStmts,
 } from './groupsync';
-import { CAMERA_ID_RE, cameraList, getCamera, relayReady, STREAM_KINDS, streamPathValidator, toView } from './cctv';
+import { CAMERA_ID_RE, cameraList, getCamera, playbackPathValidator, relayReady, STREAM_KINDS, streamPathValidator, toView } from './cctv';
 import { requireHubAdmin } from './guard';
 import { ApiError, errorIncludes } from './http';
 import { applyPhase0Update, listPhase0, parsePhase0Body } from './kpi/phase0';
@@ -364,6 +364,8 @@ export function adminRoutes() {
       // 연결하려면 '/' 로 시작하는 경로. 미연결로 두려면 null. **빼면 이전 경로 유지** (새 등록에서 빼면 미연결).
       // 목록은 경로를 돌려주지 않으므로, 이름·순서만 고치는 저장이 경로를 지우지 않게 하려면 이 규칙이 필요하다.
       stream_path: { v: streamPathValidator, nullable: true, optional: true },
+      // 다시보기 경로 틀 — 실시간 경로와 같은 규칙(빼면 유지, null 이면 끔). 실시간과 따로 켠다.
+      playback_path: { v: playbackPathValidator, nullable: true, optional: true },
       sort: { v: int({ min: 0, max: 9999 }), optional: true },
       reason,
     })(await readJsonBody(c.req.raw), '');
@@ -384,12 +386,14 @@ export function adminRoutes() {
         throw new ValidationError('stream_path_required', 'stream_path');
       }
       const stream_path: string | null = body.stream_path === undefined ? (before?.stream_path ?? null) : body.stream_path;
+      const playback_path: string | null = body.playback_path === undefined ? (before?.playback_path ?? null) : body.playback_path;
       const row = {
         camera_id: body.camera_id,
         name_ko: body.name_ko,
         site: body.site,
         stream_kind: body.stream_kind,
         stream_path,
+        playback_path,
         status: stream_path === null ? 'not_connected' : 'active',
         sort: body.sort ?? before?.sort ?? 0,
         created_at: before?.created_at ?? now,
@@ -407,14 +411,14 @@ export function adminRoutes() {
       stmts: [
         db
           .prepare(
-            `INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(camera_id) DO UPDATE SET
                name_ko = excluded.name_ko, site = excluded.site, stream_kind = excluded.stream_kind,
-               stream_path = excluded.stream_path, status = excluded.status, sort = excluded.sort,
+               stream_path = excluded.stream_path, playback_path = excluded.playback_path, status = excluded.status, sort = excluded.sort,
                updated_at = excluded.updated_at`,
           )
-          .bind(row.camera_id, row.name_ko, row.site, row.stream_kind, row.stream_path, row.status, row.sort, row.created_at, row.updated_at),
+          .bind(row.camera_id, row.name_ko, row.site, row.stream_kind, row.stream_path, row.playback_path, row.status, row.sort, row.created_at, row.updated_at),
       ],
       entry: {
         ts: now,
@@ -428,6 +432,7 @@ export function adminRoutes() {
           stream_kind: body.stream_kind,
           status,
           path_changed: (before?.stream_path ?? null) !== stream_path,
+          playback_changed: (before?.playback_path ?? null) !== row.playback_path,
           from_status: before?.status ?? null,
           reason: body.reason ?? null,
         },

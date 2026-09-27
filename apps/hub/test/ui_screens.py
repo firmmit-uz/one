@@ -401,15 +401,28 @@ def main():
                 if page.locator("table tbody tr").count() != 3:
                     out.append("cctv rows != 3")
                 # 미연결 카메라의 '영상 보기' 는 눌리지 않아야 한다
-                if page.locator("button:disabled").count() != 1:
-                    out.append(f"disabled open buttons={page.locator('button:disabled').count()}")
+                if page.locator("button:disabled", has_text="영상 보기").count() != 1:
+                    out.append(f"disabled open buttons={page.locator('button:disabled', has_text='영상 보기').count()}")
                 return out
 
             shoot(browser, base, "cctv-admin-ko-1440", "cctv", 1440, 900, expect=cctv_list_ok)
+            # 녹화 다시보기: 틀이 있는 1동만 단추가 살아 있고, 누르면 구간 폼이 열린다
+            def clip_form_ok(page, c):
+                btns = page.get_by_role("button", name="다시보기")
+                out = [] if btns.count() == 3 else [f"playback buttons {btns.count()}"]
+                enabled = [i for i in range(btns.count()) if btns.nth(i).is_enabled()]
+                out += [] if enabled == [0] else [f"playback enabled rows {enabled}"]
+                btns.nth(0).click()
+                page.wait_for_selector(".cctv-clip")
+                out += [] if page.locator(".cctv-clip input[type=date]").count() == 1 else ["clip date input missing"]
+                page.screenshot(path=str(SCREENS / "cctv-playback-form-ko-1440.png"), full_page=True)
+                return out
+            shoot(browser, base, "cctv-playback-ko-1440", "cctv", 1440, 900, expect=clip_form_ok)
             shoot(browser, base, "cctv-admin-ko-390", "cctv", 390, 844)
             shoot(browser, base_nocctv, "cctv-off-ko-1440", "cctv", 1440, 900,
                   expect=lambda p, c: ([] if p.locator(".alert-warn").count() >= 1 else ["cctv off notice missing"])
-                  + ([] if p.locator("button:disabled").count() == 3 else ["cameras should not be playable when off"]))
+                  + ([] if p.locator("button:disabled", has_text="영상 보기").count() == 3 else ["cameras should not be playable when off"])
+                  + ([] if p.locator("button:disabled", has_text="다시보기").count() == 3 else ["playback should be off when cctv off"]))
             flow_cctv_play(browser, base)
             flow_cctv_mobile_actions(browser, base)
             flow_revoke(browser, base)

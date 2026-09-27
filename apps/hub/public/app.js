@@ -805,12 +805,25 @@ async function viewCctv(main) {
         stage.scrollIntoView({ block: 'nearest' });
       },
     });
+    // 녹화 다시보기 — 틀이 등록된 카메라만. 구간은 서버가 다시 검사한다.
+    const playback = el('button', {
+      class: cam.playback === true ? 'btn btn-secondary' : 'btn btn-secondary',
+      type: 'button',
+      disabled: cam.playback !== true,
+      text: t('cctv_playback'),
+      onclick: () => {
+        ++cctvGen;
+        stopCctv();
+        put(stage, clipForm(cam, stage));
+        stage.scrollIntoView({ block: 'nearest' });
+      },
+    });
     return el('tr', {},
       el('td', { text: cam.name_ko }),
       el('td', { text: cam.site }),
       el('td', { text: t(kindKey) }),
       el('td', {}, cctvStateBadge(cam)),
-      el('td', {}, open));
+      el('td', {}, el('div', { class: 'btn-row' }, open, playback)));
   });
 
   put(main,
@@ -824,6 +837,52 @@ async function viewCctv(main) {
       : el('p', { class: 'empty', text: t('cctv_empty') }),
     el('p', { class: 'note', text: t('cctv_audit_note') }),
   );
+}
+
+// 녹화 구간 선택 → /clip/open → 같은 출처 클립 재생. 구간(≤10분)이 열람 토큰(15분)보다 짧아 다시 열 필요가 없다.
+function clipForm(cam, stage) {
+  const gen = cctvGen;
+  const date = el('input', { type: 'date', required: true });
+  const time = el('input', { type: 'time', required: true, step: '60' });
+  const len = el('select', {}, [1, 3, 5, 10].map((n) => el('option', { value: String(n), text: t('clip_len_n', { n }) })));
+  len.value = '5';
+  const msg = el('div');
+  const go = el('button', { class: 'btn btn-primary', type: 'button', text: t('cctv_clip_open') });
+  const player = el('div');
+  go.addEventListener('click', async () => {
+    // 브라우저 현지 시각으로 입력받아 UTC ISO(밀리초 포함, 서버 형식 고정)로 보낸다
+    const start = new Date(`${date.value}T${time.value}:00`);
+    if (!date.value || !time.value || Number.isNaN(start.getTime())) {
+      put(msg, el('p', { class: 'form-error', role: 'alert', text: t('cctv_clip_invalid_time') }));
+      return;
+    }
+    const from = start.toISOString();
+    const to = new Date(start.getTime() + Number(len.value) * 60_000).toISOString();
+    go.disabled = true;
+    put(msg);
+    let opened;
+    try {
+      opened = await api(`/api/cctv/${encodeURIComponent(cam.camera_id)}/clip/open`, { method: 'POST', body: { from, to } });
+    } catch (err) {
+      go.disabled = false;
+      if (!stage.isConnected || gen !== cctvGen) return;
+      put(msg, inlineError(err));
+      return;
+    }
+    go.disabled = false;
+    if (!stage.isConnected || gen !== cctvGen) return;
+    if (typeof opened.play_path !== 'string') { put(msg, inlineError(new ApiError(200, 'invalid_response'))); return; }
+    const clipCam = { ...cam, stream_kind: 'mp4' };
+    put(player, cctvPlayer(clipCam, opened.play_path, () => { stopCctv(); put(player, el('p', { class: 'empty', text: t('cctv_play_failed') })); }));
+  });
+  return el('div', { class: 'cctv-clip' },
+    el('div', { class: 'section-head' },
+      el('h2', { text: `${t('cctv_playback_title')} · ${cam.name_ko}` }),
+      el('button', { class: 'btn', type: 'button', text: t('cctv_close'), onclick: () => { stopCctv(); put(stage); } })),
+    el('p', { class: 'hint', text: t('cctv_playback_hint') }),
+    el('div', { class: 'inline' }, field(t('field_clip_date'), date), field(t('field_clip_time'), time), field(t('field_clip_len'), len), go),
+    msg,
+    player);
 }
 
 async function viewAdmin(main) {
@@ -880,13 +939,16 @@ function addCameraForm(reload) {
     el('option', { value: 'mp4', text: t('cctv_kind_mp4') }));
   const path = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' }); // 비우면 이전 경로 유지
   const disconnect = el('input', { type: 'checkbox' });
+  const playbackPath = el('input', { type: 'text', maxlength: '200', autocomplete: 'off' }); // 비우면 이전 값 유지
+  const playbackClear = el('input', { type: 'checkbox' });
   const sort = el('input', { type: 'number', min: '0', max: '9999', step: '1', placeholder: '0' }); // 비우면 이전 값 유지
   const reason = el('input', { type: 'text', maxlength: '500' });
   return formShell(
     t('form_add_camera'),
     [
       field(t('field_camera_id'), id), field(t('field_camera_name'), name), field(t('field_site'), site),
-      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_disconnect'), disconnect), field(t('field_sort'), sort),
+      field(t('field_stream_kind'), kind), field(t('field_stream_path'), path), field(t('field_disconnect'), disconnect),
+      field(t('field_playback_path'), playbackPath), field(t('field_playback_clear'), playbackClear), field(t('field_sort'), sort),
       field(t('field_reason'), reason),
     ],
     t('submit_add_camera'),
@@ -896,6 +958,9 @@ function addCameraForm(reload) {
       const body = { camera_id: id.value.trim(), name_ko: name.value.trim(), site: site.value.trim(), stream_kind: kind.value };
       if (disconnect.checked) body.stream_path = null;
       else if (p) body.stream_path = p;
+      const pb = optionalText(playbackPath.value);
+      if (playbackClear.checked) body.playback_path = null;
+      else if (pb) body.playback_path = pb;
       if (sort.value !== '') body.sort = Number(sort.value);
       const r = optionalText(reason.value);
       if (r) body.reason = r;

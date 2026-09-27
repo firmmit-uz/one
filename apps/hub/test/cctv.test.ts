@@ -107,7 +107,7 @@ function addCamera(sqlite: DatabaseSync, cam: Partial<CameraRow> & { camera_id: 
   const path = cam.stream_path === undefined ? '/live/cam1.mp4' : cam.stream_path;
   sqlite
     .prepare(
-      'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(
       cam.camera_id,
@@ -115,6 +115,7 @@ function addCamera(sqlite: DatabaseSync, cam: Partial<CameraRow> & { camera_id: 
       cam.site ?? '천안',
       cam.stream_kind ?? 'mp4',
       path,
+      cam.playback_path ?? null,
       cam.status ?? (path === null ? 'not_connected' : 'active'),
       cam.sort ?? 0,
       '2026-09-01T00:00:00.000Z',
@@ -288,6 +289,7 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
     site: '천안',
     stream_kind: 'mp4',
     stream_path: '/live/cam1.mp4',
+    playback_path: null,
     status: 'active',
     sort: 0,
     created_at: '2026-09-01T00:00:00.000Z',
@@ -316,7 +318,9 @@ describe('CCTV 재생 판정 — 한 군데에서만 한다', () => {
     const v = toView(row(), true);
     expect(JSON.stringify(v)).not.toContain('/live/cam1.mp4');
     expect(JSON.stringify(v)).not.toContain('relay.example.test');
-    expect(v).toEqual({ camera_id: 'cam-1', name_ko: '1번', site: '천안', stream_kind: 'mp4', status: 'active', playable: true });
+    expect(v).toEqual({ camera_id: 'cam-1', name_ko: '1번', site: '천안', stream_kind: 'mp4', status: 'active', playable: true, playback: false });
+    // 다시보기 틀도 화면에 나가지 않는다
+    expect(JSON.stringify(toView(row({ playback_path: '/api/cam-1/start/{from}/end/{to}/clip.mp4' }), true))).not.toContain('{from}');
   });
 
   it('중계 서버가 준비되지 않았거나 값이 이상하면 볼 수 없음으로 내린다', () => {
@@ -370,6 +374,139 @@ describe('CCTV API 권한', () => {
     const h = await cctvHarness();
     expect(await json(await h.call('/api/me', { token: await h.token(STAFF) }))).toMatchObject({ cctv_allowed: false });
     expect(await json(await h.call('/api/me', { token: await h.token(ADMIN) }))).toMatchObject({ cctv_allowed: true });
+  });
+});
+
+// R3 3단계 — 녹화 다시보기 (FIRMMIT 지시 2026-09-27, #13)
+describe('CCTV 녹화 다시보기', () => {
+  const TPL = '/api/cam-1/start/{from}/end/{to}/clip.mp4';
+  const minus = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+  const FROM = minus(20 * 60_000); // 20분 전
+  const TO = minus(15 * 60_000); // 15분 전 (5분 구간)
+  const silent = () => vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  it('구간을 열면 감사기록(구간 포함)과 구간 토큰이 한 batch 로 남고, 중계 서버에는 유닉스 초가 들어간 경로로 간다', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1', playback_path: TPL });
+    const t = await h.token(ADMIN);
+    const before = count(h.sqlite, 'SELECT COUNT(*) FROM audit_log');
+    const opened = await h.call('/api/cctv/cam-1/clip/open', { token: t, body: { from: FROM, to: TO } });
+    expect(opened.status).toBe(200);
+    const o = await json(opened);
+    expect(o).toMatchObject({ camera_id: 'cam-1', from: FROM, to: TO });
+    expect(count(h.sqlite, 'SELECT COUNT(*) FROM audit_log')).toBe(before + 1);
+    const a = h.sqlite.prepare("SELECT detail_json FROM audit_log WHERE action = 'cctv_clip_open'").get() as { detail_json: string };
+    expect(a.detail_json).toContain(FROM);
+    expect(a.detail_json).toContain('"seconds":300');
+    expect(a.detail_json).not.toContain('clip.mp4'); // 경로는 남기지 않는다
+    expect(count(h.sqlite, 'SELECT COUNT(*) FROM cctv_view_sessions WHERE clip_from = ? AND clip_to = ?', FROM, TO)).toBe(1);
+    const spy = silent();
+    const res = await h.call(o.play_path, { token: t });
+    spy.mockRestore();
+    expect(res.status).toBe(200);
+    expect(h.calls).toHaveLength(1);
+    const fromSec = Math.floor(Date.parse(FROM) / 1000);
+    const toSec = Math.floor(Date.parse(TO) / 1000);
+    expect(h.calls[0]!.url).toBe(`${RELAY}/api/cam-1/start/${fromSec}/end/${toSec}/clip.mp4`);
+    // 목록에도 다시보기 가능 표시
+    const list = await json(await h.call('/api/cctv', { token: t }));
+    expect(list.cameras[0]).toMatchObject({ camera_id: 'cam-1', playable: true, playback: true });
+  });
+
+  it('구간 규칙: 뒤집힘·10분 초과·미래·30일 전·형식 오류는 열지 못한다 (중계 서버를 부르지 않는다)', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1', playback_path: TPL });
+    const t = await h.token(ADMIN);
+    const cases: [Record<string, unknown>, number, string][] = [
+      [{ from: TO, to: FROM }, 409, 'clip_range_invalid'],
+      [{ from: FROM, to: FROM }, 409, 'clip_range_invalid'],
+      [{ from: minus(11 * 60_000), to: minus(0) }, 409, 'clip_too_long'],
+      [{ from: minus(60_000), to: new Date(NOW.getTime() + 60_000).toISOString() }, 409, 'clip_in_future'],
+      [{ from: minus(31 * 86_400_000), to: minus(31 * 86_400_000 - 60_000) }, 409, 'clip_too_old'],
+      [{ from: '2026-09-16T11:40:00Z', to: TO }, 400, 'invalid_input'], // 밀리초 없는 형식
+      [{ from: 1758020400, to: TO }, 400, 'invalid_input'],
+      [{ from: FROM }, 400, 'invalid_input'],
+      [{ from: FROM, to: TO, extra: 1 }, 400, 'invalid_input'],
+    ];
+    for (const [body, status, code] of cases) {
+      const res = await h.call('/api/cctv/cam-1/clip/open', { token: t, body });
+      expect([res.status, (await json(res)).error.code]).toEqual([status, code]);
+    }
+    expect(h.calls).toHaveLength(0);
+    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'cctv_clip_open'")).toBe(0);
+  });
+
+  it('다시보기 경로 틀이 없거나 미연결이면 playback_not_configured / not_connected', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1' }); // 실시간만
+    addCamera(h.sqlite, { camera_id: 'cam-2', stream_path: null, playback_path: TPL.replace('cam-1', 'cam-2') });
+    const t = await h.token(ADMIN);
+    const r1 = await h.call('/api/cctv/cam-1/clip/open', { token: t, body: { from: FROM, to: TO } });
+    expect([r1.status, (await json(r1)).error.code]).toEqual([409, 'playback_not_configured']);
+    const r2 = await h.call('/api/cctv/cam-2/clip/open', { token: t, body: { from: FROM, to: TO } });
+    expect([r2.status, (await json(r2)).error.code]).toEqual([409, 'not_connected']);
+    const list = await json(await h.call('/api/cctv', { token: t }));
+    expect(list.cameras.map((c: { playback: boolean }) => c.playback)).toEqual([false, false]);
+  });
+
+  it('표 제약은 통과하지만 안전하지 않은 틀(제어문자)은 목록에서 false, 열기는 playback_not_configured', async () => {
+    const h = await cctvHarness();
+    // 표 제약(시작 '/', {from}{to}, '..' 없음)은 통과하고, URL 되감기·제어문자 검사만 걸리는 값 — 직접 SQL 로만 들어갈 수 있다
+    addCamera(h.sqlite, { camera_id: 'cam-1', playback_path: '/api/cam-1/{from}/{to}/a\tb.mp4' });
+    const t = await h.token(ADMIN);
+    const list = await json(await h.call('/api/cctv', { token: t }));
+    expect(list.cameras[0]).toMatchObject({ playable: true, playback: false });
+    const res = await h.call('/api/cctv/cam-1/clip/open', { token: t, body: { from: FROM, to: TO } });
+    expect([res.status, (await json(res)).error.code]).toEqual([409, 'playback_not_configured']);
+  });
+
+  it('토큰은 종류·구간에 묶인다: 실시간 토큰으로 구간 불가, 구간 토큰으로 실시간 불가, 다른 구간 불가', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1', playback_path: TPL });
+    const t = await h.token(ADMIN);
+    const live = await json(await h.call('/api/cctv/cam-1/open', { token: t, body: {} }));
+    const liveTok = String(live.play_path).split('s=')[1]!;
+    const clip = await json(await h.call('/api/cctv/cam-1/clip/open', { token: t, body: { from: FROM, to: TO } }));
+    const clipTok = String(clip.play_path).split('s=')[1]!.split('&')[0]!;
+    const q = (f: string, to: string) => `&from=${encodeURIComponent(f)}&to=${encodeURIComponent(to)}`;
+    const spy = silent();
+    expect((await h.call(`/api/cctv/cam-1/clip?s=${liveTok}${q(FROM, TO)}`, { token: t })).status).toBe(409);
+    expect((await h.call(`/api/cctv/cam-1/play?s=${clipTok}`, { token: t })).status).toBe(409);
+    expect((await h.call(`/api/cctv/cam-1/clip?s=${clipTok}${q(minus(19 * 60_000), TO)}`, { token: t })).status).toBe(409);
+    expect((await h.call(`/api/cctv/cam-1/clip?s=${clipTok}${q(FROM, TO)}`, { token: t })).status).toBe(200);
+    spy.mockRestore();
+    expect(h.calls).toHaveLength(1);
+  });
+
+  it('EXEC 는 다시보기도 열 수 있고, 일반 직원은 403', async () => {
+    const h = await cctvHarness();
+    addCamera(h.sqlite, { camera_id: 'cam-1', playback_path: TPL });
+    const EXEC = 'exec1@example.invalid';
+    seedUser(h.sqlite, { email: EXEC, name: '경영진1', groups: ['EXEC'], grants: [] });
+    expect((await h.call('/api/cctv/cam-1/clip/open', { token: await h.token(EXEC), body: { from: FROM, to: TO } })).status).toBe(200);
+    expect((await h.call('/api/cctv/cam-1/clip/open', { token: await h.token(STAFF), body: { from: FROM, to: TO } })).status).toBe(403);
+  });
+
+  it('관리: 다시보기 경로 틀은 저장·유지·해제되고, 틀이 아니면 거부한다', async () => {
+    const h = await cctvHarness();
+    const t = await h.token(ADMIN);
+    const base = { camera_id: 'cam-1', name_ko: 'AKIS 1동', site: '타슈켄트 AKIS', stream_kind: 'mp4', stream_path: '/live/cam1.mp4' };
+    const r1 = await json(await h.call('/api/admin/cctv', { token: t, body: { ...base, playback_path: TPL } }));
+    expect(r1.camera).toMatchObject({ playable: true, playback: true });
+    // 빼면 유지
+    const r2 = await json(await h.call('/api/admin/cctv', { token: t, body: base }));
+    expect(r2.camera).toMatchObject({ playback: true });
+    // null 이면 해제 (실시간은 그대로)
+    const r3 = await json(await h.call('/api/admin/cctv', { token: t, body: { ...base, playback_path: null } }));
+    expect(r3.camera).toMatchObject({ playable: true, playback: false });
+    const a = h.sqlite.prepare("SELECT detail_json FROM audit_log WHERE action = 'cctv_camera_update' ORDER BY id DESC LIMIT 1").get() as { detail_json: string };
+    expect(a.detail_json).toContain('"playback_changed":true');
+    for (const bad of ['/api/cam-1/clip.mp4', '/x/{from}/clip.mp4', '/x/{from}/{to}/{to}', '//evil/{from}/{to}', '/x/{from}/../{to}', 'api/{from}/{to}']) {
+      const res = await h.call('/api/admin/cctv', { token: t, body: { ...base, playback_path: bad } });
+      expect([bad, res.status]).toEqual([bad, 400]);
+    }
+    // 표 제약도 틀을 요구한다
+    expect(() => h.sqlite.prepare("UPDATE cctv_cameras SET playback_path = '/x/{from}/clip.mp4' WHERE camera_id = 'cam-1'").run()).toThrow();
   });
 
   it('카메라 이름이 규칙에 안 맞으면 400 (경로 조작 차단)', async () => {

@@ -534,3 +534,20 @@ FIRMMIT 지시 "#13 + #14 순차적으로 모두" — Phase 1.5 범위 밖을 �
 | Z147 | `test/*` `README.md` 체크리스트 | 수정함 | 시험: EXEC 목록·열람(감사 EXEC 이름)·재생 200, 관리 API 3종 403, STAFF `cctv_allowed=false` · 그룹 9개 · EXEC 선택 · 변이 3종(접두어·EXEC 판정·보기 판정) · 화면 `cctv-exec-ko-1440`(CCTV 탭 보임·관리 탭 숨김). README 대응표 9행 + 접두어 규칙 명시, 체크리스트 3-8 갱신·PDF 재생성 |
 
 시험: hub **317/317** · 변이 **62/62** 미검출 0 · typecheck 0 · 화면 **21장** + 흐름 3 실패 0 · 번들 623.6 KiB.
+
+## B-13. #13 녹화 다시보기 (Z148–Z153) · 2026-09-27
+
+FIRMMIT 지시 "#13 + #14 순차적으로 모두" 의 두 번째. **go2rtc 는 녹화 기능이 없다**(README 2026-09-27 확인) → 중계 PC 의 녹화기(Frigate)가 가진 구간 클립을 실시간과 같은 방법으로 내보내는 설계. 허브는 녹화를 저장하지 않는다.
+
+| ID | 위치 | 상태 | 내용 |
+|---|---|---|---|
+| Z148 | `migrations/0009_cctv_playback.sql` | 수정함 | `cctv_cameras.playback_path`(구간 클립 경로 **틀**, `{from}` `{to}` = 유닉스 초, NULL = 다시보기 없음) + `cctv_view_sessions.clip_from/clip_to`(토큰 종류 구분). 표 제약: 틀 형식 · `clip_to > clip_from` |
+| Z149 | `src/cctv.ts` | 수정함 | `clipTarget()` 한 곳 — 중계 준비 → 연결 → 틀 → 구간 규칙(`from<to` · **10분 이하** · 미래 금지 · **30일 이내**). `POST /:id/clip/open` = 감사 `cctv_clip_open`(**구간·초 기록**, 경로·토큰은 기록 안 함) + 구간 토큰 한 batch. `GET /:id/clip?s&from&to` = 토큰이 같은 카메라·사람·**같은 구간**이어야 열림. 구간 토큰으로 실시간 `/play` 불가, 실시간 토큰으로 `/clip` 불가 |
+| Z150 | `src/admin.ts` | 수정함 | 등록 API 에 `playback_path`(빼면 유지 · null 이면 끔 · 틀 검증). 감사 `playback_changed`. 실시간 경로와 **따로** 켠다 |
+| Z151 | `public/app.js` `public/i18n.js` `styles.css` | 수정함 | 카메라 행에 「다시보기」(틀 있는 카메라만 활성) → 날짜·시작 시각·길이(1/3/5/10분) → `/clip/open` → 같은 재생기. 관리 폼에 *다시보기 경로 틀*·*다시보기 끔*. 한국어만 |
+| Z152 | `test/cctv.test.ts` `test/mutation.mjs` `test/ui_screens.py` | 수정함 | 시험 7건(정상 경로에 유닉스 초 · 거부 9종 · 틀 없음/미연결 · 토큰 종류·구간 묶임 · EXEC 가능/직원 403 · 관리 저장·유지·해제·거부 6종·표 제약 · 표 제약 통과하는 위험 틀) · 변이 6종 · 화면 `cctv-playback-ko-1440` + 폼 캡처. 처음 변이 1개(틀 검사 우회)가 살아남아 시험을 보강해 잡음 |
+| Z153 | `README.md` 4.3.5 · 체크리스트 §5 | 수정함 | Frigate 설치·보존 기간·디스크(1080p 1대 ≈ 20~40 GB/일 `[재확인 필요]`)·Tunnel 경로 분리·틀 등록. Frigate 클립 주소 `/api/<cam>/start/{from}/end/{to}/clip.mp4` 는 `[재확인 필요]`(문서 접근 차단). **녹화 보존·사후 열람의 노무·법무 결정**을 배포 전 항목으로 |
+
+**FIRMMIT 결정 필요 (기본값으로 넣었음)**: 구간 상한 10분 · 조회 범위 30일 · 녹화기 Frigate. 바꾸려면 `CLIP_MAX_MS` `CLIP_LOOKBACK_MS` 와 README 4.3.5.
+
+시험: hub **324/324** · 변이 **68/68** 미검출 0 · typecheck 0 · 화면 **22장** + 흐름 3 실패 0 · 번들 630.2 KiB · contracts·showroom 유지.

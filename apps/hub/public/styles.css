@@ -185,6 +185,9 @@ code.detail { display: block; max-width: 420px; white-space: pre-wrap; overflow-
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 /* 동기화 실패 사유 설명 — 코드 아래 줄에 붙인다 */
 .sync-why { display: block; margin-top: 2px; color: var(--text-2); font-size: 13px; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.cctv-clip .inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.cctv-clip .inline .field { margin-bottom: 0; }
 
 /* ---------- 폼·버튼 ---------- */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }

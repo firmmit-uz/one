@@ -213,7 +213,9 @@ npx wrangler d1 execute fm-one-hub --remote --env="" --file bootstrap-admins.sql
 ☐ go2rtc + Cloudflare Tunnel 구축 (`apps/hub/docs/cctv-relay/go2rtc.example.yaml`)
 ☐ `CCTV_RELAY_AUTH` 를 `cf-access` / `basic` / `none` 중 **명시적으로 기입** (자리표시자면 거부)
 ☐ Secret 등록 (`CCTV_RELAY_CF_ID`·`CCTV_RELAY_CF_SECRET` 또는 `CCTV_RELAY_USER`·`CCTV_RELAY_PASS`)
-☐ **노무·법무 검토** (근로자 감시) `[재확인 필요]`
+☐ **노무·법무 검토** (근로자 감시 · **녹화 보존·사후 열람** 포함) `[재확인 필요]`
+☐ 녹화 다시보기를 쓰려면 중계 PC 에 **Frigate**(녹화기) + 디스크(카메라 수 × 보존일 × 20~40 GB/일) `[재확인 필요]`
+☐ 다시보기 경로 틀(`{from}` `{to}` = 유닉스 초)을 관리 화면에 등록 — README 4.3.5
 ☐ **G11 운영 검증** + 박선기 대표 승인
 
 > 안 켜면 아무 일도 없다 — 카메라는 전부 "볼 수 없음", 영상 요청은 `409` 로 끝나고 중계 서버를 부르지도 않는다.
