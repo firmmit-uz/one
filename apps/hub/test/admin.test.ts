@@ -10,9 +10,9 @@ async function ready() {
 describe('관리: 조회', () => {
   it('사용자·부여 상태·앱·사본 반환', async () => {
     const { h, t } = await ready();
-    seedUser(h.sqlite, { email: 'over@example.test', groups: ['UZ'], grants: [{ app_id: 'amim', role: 'ADMIN' }] });
+    seedUser(h.sqlite, { email: 'over@example.invalid', groups: ['UZ'], grants: [{ app_id: 'amim', role: 'ADMIN' }] });
     const body = await json(await h.call('/api/admin/users', { token: t }));
-    const over = body.users.find((u: { email: string }) => u.email === 'over@example.test');
+    const over = body.users.find((u: { email: string }) => u.email === 'over@example.invalid');
     expect(over.grants[0].state).toBe('over_ceiling');
     const staff = body.users.find((u: { email: string }) => u.email === STAFF);
     expect(staff.groups).toEqual(['NONGJAJAE']);
@@ -29,14 +29,14 @@ describe('관리: 직원 등록·상태', () => {
     const { h, t } = await ready();
     const res = await h.call('/api/admin/users', {
       token: t,
-      body: { email: 'New.Person@Example.test', display_name: ' 신규 직원 ', emp_id: 'E-100', reason: '입사' },
+      body: { email: 'New.Person@Example.invalid', display_name: ' 신규 직원 ', emp_id: 'E-100', reason: '입사' },
     });
     expect(res.status).toBe(201);
-    expect((await json(res)).user).toMatchObject({ email: 'new.person@example.test', display_name: '신규 직원', status: 'active' });
-    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'user_create' AND target = 'user:new.person@example.test'")).toBe(1);
-    const dup = await h.call('/api/admin/users', { token: t, body: { email: 'new.person@example.test', display_name: 'x' } });
+    expect((await json(res)).user).toMatchObject({ email: 'new.person@example.invalid', display_name: '신규 직원', status: 'active' });
+    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'user_create' AND target = 'user:new.person@example.invalid'")).toBe(1);
+    const dup = await h.call('/api/admin/users', { token: t, body: { email: 'new.person@example.invalid', display_name: 'x' } });
     expect(dup.status).toBe(409);
-    const dupEmp = await h.call('/api/admin/users', { token: t, body: { email: 'other@example.test', display_name: 'x', emp_id: 'E-100' } });
+    const dupEmp = await h.call('/api/admin/users', { token: t, body: { email: 'other@example.invalid', display_name: 'x', emp_id: 'E-100' } });
     expect(dupEmp.status).toBe(409);
     expect(count(h.sqlite, 'SELECT COUNT(*) FROM audit_log')).toBe(1);
   });
@@ -49,7 +49,7 @@ describe('관리: 직원 등록·상태', () => {
     const a = h.sqlite.prepare("SELECT detail_json FROM audit_log WHERE action = 'user_status_change'").get() as { detail_json: string };
     expect(JSON.parse(a.detail_json)).toEqual({ from: 'active', to: 'suspended', reason: '휴직' });
     expect((await h.call(path, { token: t, body: { status: 'suspended' } })).status).toBe(409);
-    expect((await h.call('/api/admin/users/ghost%40example.test/status', { token: t, body: { status: 'revoked' } })).status).toBe(404);
+    expect((await h.call('/api/admin/users/ghost%40example.invalid/status', { token: t, body: { status: 'revoked' } })).status).toBe(404);
     const self = await h.call(`/api/admin/users/${encodeURIComponent(ADMIN)}/status`, { token: t, body: { status: 'revoked' } });
     expect(self.status).toBe(409);
     expect((await json(self)).error.code).toBe('self_lockout');
@@ -59,20 +59,20 @@ describe('관리: 직원 등록·상태', () => {
   it('직원 기록 삭제·이메일 변경은 DB 가 거부', async () => {
     const { h } = await ready();
     expect(() => h.sqlite.prepare('DELETE FROM users WHERE email = ?').run(STAFF)).toThrow(/users_no_delete/);
-    expect(() => h.sqlite.prepare("UPDATE users SET email = 'x@example.test' WHERE email = ?").run(STAFF)).toThrow();
+    expect(() => h.sqlite.prepare("UPDATE users SET email = 'x@example.invalid' WHERE email = ?").run(STAFF)).toThrow();
   });
 });
 
 describe('관리: 부여·회수', () => {
   it('부여 → 201, 감사 target 에 부여 id, 즉시 유효', async () => {
     const { h, t } = await ready();
-    seedUser(h.sqlite, { email: 'rnd@example.test', groups: ['RND'] });
-    const rt = await h.token('rnd@example.test');
+    seedUser(h.sqlite, { email: 'rnd@example.invalid', groups: ['RND'] });
+    const rt = await h.token('rnd@example.invalid');
     const ids = async () => (await json(await h.call('/api/apps', { token: rt }))).apps.map((a: { app_id: string }) => a.app_id);
     expect(await ids()).not.toContain('icheon-vfarm');
     const res = await h.call('/api/admin/grants', {
       token: t,
-      body: { email: 'rnd@example.test', app_id: 'icheon-vfarm', role: 'VIEWER', scope: 'KR', expires_at: '2027-01-01T00:00:00Z' },
+      body: { email: 'rnd@example.invalid', app_id: 'icheon-vfarm', role: 'VIEWER', scope: 'KR', expires_at: '2027-01-01T00:00:00Z' },
     });
     expect(res.status).toBe(201);
     const g = (await json(res)).grant;
@@ -97,7 +97,7 @@ describe('관리: 부여·회수', () => {
 
   it('없는 사용자 404, 없는 앱 400, hub 는 허용', async () => {
     const { h, t } = await ready();
-    expect((await h.call('/api/admin/grants', { token: t, body: { email: 'ghost@example.test', app_id: 'amim', role: 'VIEWER' } })).status).toBe(404);
+    expect((await h.call('/api/admin/grants', { token: t, body: { email: 'ghost@example.invalid', app_id: 'amim', role: 'VIEWER' } })).status).toBe(404);
     expect((await h.call('/api/admin/grants', { token: t, body: { email: STAFF, app_id: 'no-such-app', role: 'VIEWER' } })).status).toBe(400);
     expect((await h.call('/api/admin/grants', { token: t, body: { email: STAFF, app_id: 'hub', role: 'VIEWER' } })).status).toBe(201);
   });
@@ -140,7 +140,7 @@ describe('관리: 그룹 사본 수동 입력', () => {
       body: {
         groups: [
           { group_name: 'ADMIN', emails: [ADMIN, ADMIN2] },
-          { group_name: 'UZ', emails: [STAFF, 'uz1@example.test'] },
+          { group_name: 'UZ', emails: [STAFF, 'uz1@example.invalid'] },
         ],
         reason: '수동 동기화',
       },
@@ -153,7 +153,7 @@ describe('관리: 그룹 사본 수동 입력', () => {
     const d = JSON.parse(row.detail_json);
     expect(d.added).toEqual([
       ['UZ', STAFF],
-      ['UZ', 'uz1@example.test'],
+      ['UZ', 'uz1@example.invalid'],
     ]);
     expect(d.removed).toEqual([['NONGJAJAE', STAFF]]);
     const me = await json(await h.call('/api/me', { token: await h.token(STAFF) }));

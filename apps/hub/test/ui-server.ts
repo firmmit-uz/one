@@ -15,11 +15,11 @@ const { sqlite, d1 } = createDb();
 const now = new Date();
 const iso = (ms: number) => new Date(now.getTime() + ms).toISOString();
 
-// 가짜 조직 (example.test 도메인만)
-seedUser(sqlite, { email: 'admin1@example.test', name: '김관리', empId: 'FM-001', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'ADMIN' }, { app_id: 'ahost', role: 'OPERATOR' }] });
-seedUser(sqlite, { email: 'admin2@example.test', name: '이관리', groups: ['ADMIN', 'BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
+// 가짜 조직 (이메일은 @example.invalid, 호스트 이름은 *.example.test)
+seedUser(sqlite, { email: 'admin1@example.invalid', name: '김관리', empId: 'FM-001', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'ADMIN' }, { app_id: 'ahost', role: 'OPERATOR' }] });
+seedUser(sqlite, { email: 'admin2@example.invalid', name: '이관리', groups: ['ADMIN', 'BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
 seedUser(sqlite, {
-  email: 'staff1@example.test',
+  email: 'staff1@example.invalid',
   name: 'Aziz Karimov',
   empId: 'UZ-017',
   groups: ['UZ', 'NONGJAJAE'],
@@ -30,19 +30,21 @@ seedUser(sqlite, {
     { app_id: 'nongjajae', role: 'ADMIN' },
   ],
 });
-seedUser(sqlite, { email: 'rnd1@example.test', name: '박연구', groups: ['RND'], grants: [{ app_id: 'icheon-vfarm', role: 'OPERATOR', expires_at: iso(30 * 86_400_000) }] });
-seedUser(sqlite, { email: 'left@example.test', name: '퇴사자', status: 'revoked', groups: [] });
+seedUser(sqlite, { email: 'rnd1@example.invalid', name: '박연구', groups: ['RND'], grants: [{ app_id: 'icheon-vfarm', role: 'OPERATOR', expires_at: iso(30 * 86_400_000) }] });
+seedUser(sqlite, { email: 'left@example.invalid', name: '퇴사자', status: 'revoked', groups: [] });
 setSynced(sqlite, process.env.STALE === '1' ? new Date(now.getTime() - 45 * 60_000) : now);
 
 // WP1 자동 동기화 화면 (AUTOSYNC=1): 마지막 시도가 실패한 상태를 보여준다
 const AUTO_SYNC = process.env.AUTOSYNC === '1';
+// SYNCFAIL_CODE 로 실패 코드를 바꿔 "사전에 없는 코드는 설명 없이 코드만" 분기를 찍는다
+const SYNC_FAIL_CODE = /^[a-z0-9_]{1,40}$/.test(process.env.SYNCFAIL_CODE ?? '') ? (process.env.SYNCFAIL_CODE as string) : 'api_http_403';
 if (AUTO_SYNC) {
   sqlite
     .prepare(
       `INSERT INTO group_sync_state (key, last_attempt_at, last_outcome, last_failure_code, last_failure_at, consecutive_failures, stale_audited_at)
-       VALUES ('access_groups', ?, 'failure', 'api_http_403', ?, 2, NULL)`,
+       VALUES ('access_groups', ?, 'failure', ?, ?, 2, NULL)`,
     )
-    .run(iso(-4 * 60_000), iso(-4 * 60_000));
+    .run(iso(-4 * 60_000), SYNC_FAIL_CODE, iso(-4 * 60_000));
 }
 
 // WP2: 홈 화면 KPI (가짜 값 — 실제 운영 수치 아님)
@@ -62,8 +64,8 @@ up.run('firmmit-mall', 'UP', 0, iso(-60_000), null, 200);
 
 const db = d1 as unknown as D1Database;
 await appendAudit(db, { ts: iso(-900_000), actor_email: 'system:cron', action: 'uptime_state_change', target: 'app:amim', detail: { from: 'UP', to: 'DOWN', consecutive_failures: 2, status_code: 503 }, request_id: 'cron-1' });
-await appendAudit(db, { ts: iso(-600_000), actor_email: 'admin1@example.test', action: 'grant_create', target: 'grant:1', detail: { email: 'staff1@example.test', app_id: 'amim', role: 'MANAGER', scope: 'UZ', expires_at: null, reason: null }, request_id: 'r-1' });
-await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.test', action: 'user_status_change', target: 'user:left@example.test', detail: { from: 'active', to: 'revoked', reason: '퇴사' }, request_id: 'r-2' });
+await appendAudit(db, { ts: iso(-600_000), actor_email: 'admin1@example.invalid', action: 'grant_create', target: 'grant:1', detail: { email: 'staff1@example.invalid', app_id: 'amim', role: 'MANAGER', scope: 'UZ', expires_at: null, reason: null }, request_id: 'r-1' });
+await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.invalid', action: 'user_status_change', target: 'user:left@example.invalid', detail: { from: 'active', to: 'revoked', reason: '퇴사' }, request_id: 'r-2' });
 
 // R3 CCTV 화면 (가짜 카메라 — 실제 카메라·중계 서버 아님)
 const cam = sqlite.prepare(
@@ -89,7 +91,7 @@ const fakeRelay = async (url: string): Promise<Response> => {
 };
 
 const app = createApp({ fetch: fakeRelay });
-const IDENTITIES: Record<string, string> = { admin: 'admin1@example.test', staff: 'staff1@example.test', stranger: 'nobody@example.test' };
+const IDENTITIES: Record<string, string> = { admin: 'admin1@example.invalid', staff: 'staff1@example.invalid', stranger: 'nobody@example.invalid' };
 
 function staticHeaders(): Record<string, string> {
   const lines = readFileSync(join(PUBLIC, '_headers'), 'utf8').split('\n');

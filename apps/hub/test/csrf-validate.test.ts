@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { arrayOf, bool, email, futureIsoUtc, objectOf, role, str, ValidationError } from '../src/validate';
 import { ADMIN, count, harness, json, NOW, ORIGIN, seedOrg, STAFF } from './helpers';
 
-const body = { email: 'csrf@example.test', display_name: 'CSRF' };
+const body = { email: 'csrf@example.invalid', display_name: 'CSRF' };
 const BEL = String.fromCharCode(7);
 
 async function ready() {
@@ -77,20 +77,20 @@ describe('입력 검증 (HTTP)', () => {
     ['공백 이메일', { email: '   ', display_name: 'x' }],
     ['이메일 숫자', { email: 42, display_name: 'x' }],
     ['이메일 형식', { email: 'no-at-sign', display_name: 'x' }],
-    ['이메일 앞뒤 공백', { email: ' a@example.test', display_name: 'x' }],
-    ['이름 누락', { email: 'a@example.test' }],
-    ['이름 빈 값', { email: 'a@example.test', display_name: '  ' }],
-    ['이름 null', { email: 'a@example.test', display_name: null }],
-    ['이름 제어문자', { email: 'a@example.test', display_name: `a${BEL}b` }],
+    ['이메일 앞뒤 공백', { email: ' a@example.invalid', display_name: 'x' }],
+    ['이름 누락', { email: 'a@example.invalid' }],
+    ['이름 빈 값', { email: 'a@example.invalid', display_name: '  ' }],
+    ['이름 null', { email: 'a@example.invalid', display_name: null }],
+    ['이름 제어문자', { email: 'a@example.invalid', display_name: `a${BEL}b` }],
     ['배열 본문', [body]],
     ['null 본문', null],
     ['문자열 본문', 'x'],
-    ['__proto__ 필드', JSON.parse('{"email":"a@example.test","display_name":"x","__proto__":{"admin":true}}')],
+    ['__proto__ 필드', JSON.parse('{"email":"a@example.invalid","display_name":"x","__proto__":{"admin":true}}')],
   ];
   for (const [name, b] of cases) {
     it(`직원 등록: ${name} → 400`, async () => {
       const { h, t } = await ready();
-      const raw = name === '__proto__ 필드' ? '{"email":"a@example.test","display_name":"x","__proto__":{"admin":true}}' : JSON.stringify(b);
+      const raw = name === '__proto__ 필드' ? '{"email":"a@example.invalid","display_name":"x","__proto__":{"admin":true}}' : JSON.stringify(b);
       const res = await h.call('/api/admin/users', { token: t, rawBody: raw });
       expect(res.status).toBe(400);
       expect((await json(res)).error.code).toBe('invalid_input');

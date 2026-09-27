@@ -168,19 +168,19 @@ export function seedUser(
   for (const g of u.grants ?? []) {
     const info = sqlite
       .prepare('INSERT INTO role_grants (email, app_id, role, scope, expires_at, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(u.email, g.app_id, g.role, g.scope ?? '*', g.expires_at ?? null, 'seed@example.test', '2026-09-01T00:00:00.000Z');
+      .run(u.email, g.app_id, g.role, g.scope ?? '*', g.expires_at ?? null, 'seed@example.invalid', '2026-09-01T00:00:00.000Z');
     const id = Number(info.lastInsertRowid);
     if (g.revoked) {
-      sqlite.prepare('UPDATE role_grants SET revoked_at = ?, revoked_by = ? WHERE id = ?').run('2026-09-02T00:00:00.000Z', 'seed@example.test', id);
+      sqlite.prepare('UPDATE role_grants SET revoked_at = ?, revoked_by = ? WHERE id = ?').run('2026-09-02T00:00:00.000Z', 'seed@example.invalid', id);
     }
     ids.push(id);
   }
   return ids;
 }
 
-export const ADMIN = 'admin1@example.test';
-export const ADMIN2 = 'admin2@example.test';
-export const STAFF = 'staff1@example.test';
+export const ADMIN = 'admin1@example.invalid';
+export const ADMIN2 = 'admin2@example.invalid';
+export const STAFF = 'staff1@example.invalid';
 
 // 기본 조직: ADMIN 2명 + 농자재 직원 1명, 사본 신선
 export function seedOrg(sqlite: DatabaseSync): void {

@@ -472,11 +472,11 @@ describe('WP1 권한 반영', () => {
   it('동기화 실패가 30분 넘게 이어지면 비ADMIN 쓰기 거부', async () => {
     const h = await harness(AUTO_ENV);
     seedOrg(h.sqlite);
-    seedUser(h.sqlite, { email: 'op@example.test', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'OPERATOR' }] });
+    seedUser(h.sqlite, { email: 'op@example.invalid', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'OPERATOR' }] });
     h.clock.now = new Date(NOW.getTime() + 31 * 60 * 1000);
     await runGroupSync(h.env.DB, h.env, fakeApi({ status: 500, text: '' }, h.clock).deps);
 
-    const res = await h.call('/api/admin/users', { token: await h.token('op@example.test'), body: {} });
+    const res = await h.call('/api/admin/users', { token: await h.token('op@example.invalid'), body: {} });
     expect(res.status).toBe(403);
     expect((await json(res)).error.code).toBe('group_snapshot_stale');
   });

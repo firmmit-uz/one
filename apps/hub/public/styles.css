@@ -5,7 +5,8 @@
   --brand-tint: #eaf0ff;
   --text: #292c34;
   --text-2: #50545f;
-  --line-strong: #9898a0;
+  --line-strong: #9898a0;   /* 장식선 전용 — 흰 배경 대비 2.86:1 */
+  --control-line: #8a8a93;  /* 조작 요소 테두리 — 흰 3.42:1 · 면 3.16:1 (WCAG 2.2 SC 1.4.11) */
   --line: #e1e3e8;
   --bg: #f5f6f8;
   --surface: #ffffff;
@@ -89,7 +90,7 @@ a.card:focus-visible, .btn:focus-visible { outline-offset: 3px; }
 
 .session { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 14px; }
 .who { color: var(--text-2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.logout { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; text-decoration: none; color: var(--text); font-weight: 600; }
+.logout { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--control-line); border-radius: 8px; text-decoration: none; color: var(--text); font-weight: 600; }
 .logout:hover { border-color: var(--brand); color: var(--brand); }
 .lang select { min-height: 36px; }
 
@@ -182,6 +183,8 @@ code.detail { display: block; max-width: 420px; white-space: pre-wrap; overflow-
 .kv:last-child { border-bottom: 0; }
 .kv dt { color: var(--text-2); font-weight: 600; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
+/* 동기화 실패 사유 설명 — 코드 아래 줄에 붙인다 */
+.sync-why { display: block; margin-top: 2px; color: var(--text-2); font-size: 13px; }
 
 /* ---------- 폼·버튼 ---------- */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
@@ -193,7 +196,7 @@ code.detail { display: block; max-width: 420px; white-space: pre-wrap; overflow-
 input, select, textarea {
   font: inherit; color: var(--text);
   min-height: 48px; padding: 10px 14px;
-  border: 1px solid var(--line-strong); border-radius: 10px; background: var(--input-bg);
+  border: 1px solid var(--control-line); border-radius: 10px; background: var(--input-bg);
   width: 100%;
 }
 .inline select { width: auto; }
@@ -209,7 +212,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .btn-primary { background: var(--brand); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
-.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--line-strong); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--control-line); }
 .btn-secondary:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .btn-danger { background: var(--bad); color: #fff; }
 .btn-danger-outline { background: var(--surface); color: var(--bad); border-color: #f3c7c2; }

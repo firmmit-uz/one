@@ -965,6 +965,16 @@ async function renderUsers(box) {
   );
 }
 
+// WP1 동기화 실패 사유: 코드는 그대로 두고 그 옆에 설명을 붙인다.
+// 사전에 없는 코드(새로 생긴 api_http_* 등)는 설명 없이 코드만 보여준다 — 뜻을 지어내지 않는다.
+function syncFailText(code) {
+  const http = /^api_http_(\d+)$/.exec(String(code)); // groupsync 는 범위 밖 상태를 api_http_0 으로 적는다
+  if (http) return t('sync_fail_api_http', { code: http[1] });
+  const key = `sync_fail_${code}`;
+  const msg = t(key);
+  return msg === key ? '' : msg;
+}
+
 // WP1: 그룹 동기화 상태 (마지막 성공 · 마지막 실패 사유 · 다음 예정)
 function syncPanel(data) {
   const snap = data.snapshot || {};
@@ -989,6 +999,7 @@ function syncPanel(data) {
     rows.push(kv(t('sync_last_attempt'), t('sync_never')));
   }
   if (failed && s.last_failure_code) {
+    const why = syncFailText(s.last_failure_code);
     rows.push(
       kv(
         t('sync_last_failure'),
@@ -1000,6 +1011,7 @@ function syncPanel(data) {
           t('sync_consecutive', { n: s.consecutive_failures || 1 }),
           ' · ',
           fmtTime(s.last_failure_at),
+          why ? el('span', { class: 'sync-why', text: why }) : null,
         ),
       ),
     );

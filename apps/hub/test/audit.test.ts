@@ -14,7 +14,7 @@ async function withRows(n = 5) {
   for (let i = 0; i < n; i++) {
     await appendAudit(d1 as unknown as D1Database, {
       ts: new Date(NOW.getTime() + i * 1000).toISOString(),
-      actor_email: 'admin@example.test',
+      actor_email: 'admin@example.invalid',
       action: 'test_event',
       target: `t:${i}`,
       detail: { i, note: '감사 기록' },
@@ -48,7 +48,7 @@ describe('감사기록: 추가 전용 트리거', () => {
     expect(() =>
       sqlite
         .prepare(
-          "INSERT OR REPLACE INTO audit_log (id, ts, actor_email, action, target, detail_json, request_id, prev_hash, row_hash) VALUES (2, 'x', 'evil@example.test', 'forged', 't', '{}', 'r', ?, ?)",
+          "INSERT OR REPLACE INTO audit_log (id, ts, actor_email, action, target, detail_json, request_id, prev_hash, row_hash) VALUES (2, 'x', 'evil@example.invalid', 'forged', 't', '{}', 'r', ?, ?)",
         )
         .run(head, fake),
     ).toThrow(/audit_log_append_only/);
@@ -64,7 +64,7 @@ describe('감사기록: 추가 전용 트리거', () => {
       expect(() =>
         sqlite
           .prepare(
-            `${verb} INTO audit_log (ts, actor_email, action, target, detail_json, request_id, prev_hash, row_hash) VALUES ('x', 'evil@example.test', 'forged', 't', '{}', 'r', ?, ?)`,
+            `${verb} INTO audit_log (ts, actor_email, action, target, detail_json, request_id, prev_hash, row_hash) VALUES ('x', 'evil@example.invalid', 'forged', 't', '{}', 'r', ?, ?)`,
           )
           .run(head, r1.row_hash),
       ).toThrow(/audit_log_append_only/);
@@ -156,7 +156,7 @@ describe('감사기록: 해시 체인', () => {
     const copy = openDb(copyPath);
     copy.exec('DROP TRIGGER audit_log_no_update');
     const row = copy.prepare('SELECT * FROM audit_log WHERE id = 2').get() as Record<string, string>;
-    const forged = { ...row, actor_email: 'someone-else@example.test' };
+    const forged = { ...row, actor_email: 'someone-else@example.invalid' };
     const h = await computeRowHash(row.prev_hash!, canonicalContent(forged as never));
     copy.prepare('UPDATE audit_log SET actor_email = ?, row_hash = ? WHERE id = 2').run(forged.actor_email, h);
     const r = await verifyAuditChain(db(new FakeD1(copy)));
@@ -179,7 +179,7 @@ describe('감사기록: 해시 체인', () => {
     };
     await runAudited(db(d1), async () => ({
       stmts: [],
-      entry: { ts: NOW.toISOString(), actor_email: 'a@example.test', action: 'retry_test', target: 'x', detail: {}, request_id: 'r2' },
+      entry: { ts: NOW.toISOString(), actor_email: 'a@example.invalid', action: 'retry_test', target: 'x', detail: {}, request_id: 'r2' },
     }));
     expect(injected).toBe(true);
     expect(count(sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'retry_test'")).toBe(1);
@@ -194,13 +194,13 @@ describe('감사기록: 해시 체인', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await h.call('/api/admin/users', {
       token: await h.token(ADMIN),
-      body: { email: 'atomic@example.test', display_name: '원자성' },
+      body: { email: 'atomic@example.invalid', display_name: '원자성' },
     });
     expect(res.status).toBe(500);
     const body = await json(res);
     expect(body).toEqual({ error: { code: 'internal_error', message: 'Internal error' } });
     expect(JSON.stringify(body)).not.toContain('blocked_for_test');
-    expect(count(h.sqlite, "SELECT COUNT(*) FROM users WHERE email = 'atomic@example.test'")).toBe(0);
+    expect(count(h.sqlite, "SELECT COUNT(*) FROM users WHERE email = 'atomic@example.invalid'")).toBe(0);
     errSpy.mockRestore();
   });
 });
@@ -210,17 +210,17 @@ describe('감사기록 API', () => {
     const h = await harness();
     seedOrg(h.sqlite);
     const t = await h.token(ADMIN);
-    await h.call('/api/admin/users', { token: t, body: { email: 'a1@example.test', display_name: 'A1' } });
-    await h.call('/api/admin/users', { token: t, body: { email: 'a2@example.test', display_name: 'A2' } });
+    await h.call('/api/admin/users', { token: t, body: { email: 'a1@example.invalid', display_name: 'A1' } });
+    await h.call('/api/admin/users', { token: t, body: { email: 'a2@example.invalid', display_name: 'A2' } });
     const list = await json(await h.call('/api/admin/audit?limit=1', { token: t }));
     expect(list.entries).toHaveLength(1);
-    expect(list.entries[0]).toMatchObject({ action: 'user_create', target: 'user:a2@example.test', actor_email: ADMIN });
+    expect(list.entries[0]).toMatchObject({ action: 'user_create', target: 'user:a2@example.invalid', actor_email: ADMIN });
     expect(list.entries[0].detail).toMatchObject({ display_name: 'A2' });
     const older = await json(await h.call(`/api/admin/audit?before=${list.entries[0].id}`, { token: t }));
-    expect(older.entries[0].target).toBe('user:a1@example.test');
+    expect(older.entries[0].target).toBe('user:a1@example.invalid');
     const v = await json(await h.call('/api/admin/audit/verify', { token: t }));
     expect(v).toMatchObject({ ok: true, checked: 2 });
-    const staff = await h.token('staff1@example.test');
+    const staff = await h.token('staff1@example.invalid');
     expect((await h.call('/api/admin/audit', { token: staff })).status).toBe(403);
     expect((await h.call('/api/admin/audit/verify', { token: staff })).status).toBe(403);
   });
@@ -231,14 +231,14 @@ describe('BREAKGLASS 로그인 기록', () => {
     const h = await harness();
     seedOrg(h.sqlite);
     const { seedUser } = await import('./helpers');
-    seedUser(h.sqlite, { email: 'bg@example.test', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
-    const t1 = await h.token('bg@example.test', {}, { iat: 1_700_000_000 + 1 });
+    seedUser(h.sqlite, { email: 'bg@example.invalid', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
+    const t1 = await h.token('bg@example.invalid', {}, { iat: 1_700_000_000 + 1 });
     expect((await h.call('/api/me', { token: t1 })).status).toBe(200);
     expect((await h.call('/api/apps', { token: t1 })).status).toBe(200);
     expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'breakglass_login'")).toBe(1);
-    const t2 = await h.token('bg@example.test', {}, { iat: 1_700_000_000 + 2 });
+    const t2 = await h.token('bg@example.invalid', {}, { iat: 1_700_000_000 + 2 });
     await h.call('/api/me', { token: t2 });
-    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'breakglass_login' AND actor_email = 'bg@example.test'")).toBe(2);
+    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'breakglass_login' AND actor_email = 'bg@example.invalid'")).toBe(2);
     // 일반 사용자는 기록 없음
     await h.call('/api/me', { token: await h.token(ADMIN) });
     expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'breakglass_login'")).toBe(2);
@@ -248,9 +248,9 @@ describe('BREAKGLASS 로그인 기록', () => {
     const h = await harness();
     seedOrg(h.sqlite);
     const { seedUser } = await import('./helpers');
-    seedUser(h.sqlite, { email: 'bg@example.test', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
+    seedUser(h.sqlite, { email: 'bg@example.invalid', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
     h.sqlite.exec("CREATE TRIGGER test_block_audit BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
-    const res = await h.call('/api/me', { token: await h.token('bg@example.test') });
+    const res = await h.call('/api/me', { token: await h.token('bg@example.invalid') });
     expect(res.status).toBe(500);
     expect((await json(res)).error.code).toBe('audit_unavailable');
   });

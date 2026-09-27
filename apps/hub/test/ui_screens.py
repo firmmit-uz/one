@@ -29,9 +29,11 @@ def bundle():
     )
 
 
-def start_server(port, stale=False, autosync=False, cctv=True):
+def start_server(port, stale=False, autosync=False, cctv=True, syncfail=None):
     env = dict(os.environ, PORT=str(port), STALE="1" if stale else "0",
                AUTOSYNC="1" if autosync else "0", CCTV="on" if cctv else "off", NODE_NO_WARNINGS="1")
+    if syncfail:
+        env["SYNCFAIL_CODE"] = syncfail
     proc = subprocess.Popen(["node", str(BUNDLE)], cwd=HUB, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -61,6 +63,47 @@ PAGE_CHECKS_JS = """
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const junk = [];
   while (walker.nextNode()) { const v = walker.currentNode.textContent.trim(); if (/^(null|undefined|NaN|\[object Object\])$/.test(v)) junk.push(v); }
+  // 실제로 그려진 글자마다 대비를 잰다 (WCAG 2.2 AA: 본문 4.5:1 · 큰 글자 3:1).
+  // 토큰만 보면 놓치는 조합(겹친 배경·상태별 색)을 화면에서 직접 잡기 위한 검사다.
+  const rgb = (v) => { const m = /rgba?\(([^)]+)\)/.exec(v); if (!m) return null;
+    const p = m[1].split(',').map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const rel = (c) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  const ratio = (a, b) => { const l1 = rel(a), l2 = rel(b); const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+    return (hi + 0.05) / (lo + 0.05); };
+  const bgOf = (e) => { let n = e;
+    while (n && n !== document.documentElement) { const c = rgb(getComputedStyle(n).backgroundColor);
+      if (c && c.a === 1) return c; n = n.parentElement; }
+    return { r: 255, g: 255, b: 255, a: 1 }; };
+  const lowContrast = [];
+  const contrastUnchecked = []; // 색을 읽지 못해 재지 못한 글자 — 하나라도 있으면 실패 (조용히 통과시키지 않는다)
+  const w2 = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (w2.nextNode()) {
+    const node = w2.currentNode;
+    const text = node.textContent.trim();
+    if (!text) continue;
+    const e = node.parentElement;
+    if (!e || !vis(e)) continue;
+    if (e.closest('.visually-hidden, .skip-link')) continue;
+    if (e.closest('button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled=true]')) continue;
+    const st = getComputedStyle(e);
+    const fg = rgb(st.color);
+    if (!fg || fg.a < 1) { contrastUnchecked.push(`${text.slice(0, 24)} :: color ${st.color}`); continue; }
+    let bgNode = e, bgHit = null;
+    while (bgNode && bgNode !== document.documentElement) {
+      const c = rgb(getComputedStyle(bgNode).backgroundColor);
+      if (c && c.a === 1) { bgHit = c; break; }
+      if (c && c.a > 0) { bgHit = 'translucent'; break; }
+      bgNode = bgNode.parentElement;
+    }
+    if (bgHit === 'translucent') { contrastUnchecked.push(`${text.slice(0, 24)} :: translucent background`); continue; }
+    const size = parseFloat(st.fontSize);
+    const weight = Number(st.fontWeight) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const need = large ? 3 : 4.5;
+    const got = ratio(fg, bgOf(e));
+    if (got + 0.005 < need) lowContrast.push(`${text.slice(0, 24)} :: ${st.color} on bg ${got.toFixed(2)}:1 < ${need}`);
+  }
   return {
     junkText: junk,
     lang: document.documentElement.lang,
@@ -69,7 +112,7 @@ PAGE_CHECKS_JS = """
     smallTargets: small,
     cardLinks: cards.length,
     disabledCards: document.querySelectorAll('.card-disabled').length,
-    badLinks, disabledWithLink, greyText,
+    badLinks, disabledWithLink, greyText, lowContrast, contrastUnchecked,
     iframes: document.querySelectorAll('iframe').length,
     adminTabVisible: !document.querySelector('[data-route=admin]').hidden,
     cctvTabVisible: !document.querySelector('[data-route=cctv]').hidden,
@@ -117,6 +160,10 @@ def shoot(browser, base, name, route, width, height, as_user="admin", lang="ko",
         problems.append(f"stray text nodes: {checks['junkText']}")
     if checks["greyText"]:
         problems.append(f"#9898A0 used as text color on {checks['greyText']} elements")
+    if checks["lowContrast"]:
+        problems.append(f"low contrast text: {checks['lowContrast']}")
+    if checks["contrastUnchecked"]:
+        problems.append(f"contrast not measurable: {checks['contrastUnchecked']}")
     if not checks["logoRight"]:
         problems.append("logo not at top right")
     if checks["lang"] != lang:
@@ -227,13 +274,13 @@ def flow_revoke(browser, base):
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.goto(f"{base}/#/admin")
     page.wait_for_selector("text=Aziz Karimov")
-    row = page.locator("tr", has_text="staff1@example.test")
+    row = page.locator("tr", has_text="staff1@example.invalid")
     before = row.locator(".badge", has_text="회수됨").count()
     row.get_by_role("button", name="회수", exact=True).first.click()
     page.get_by_role("button", name="회수 확인").click()
     page.wait_for_selector(".toast >> text=저장되었습니다")
-    page.wait_for_function("() => [...document.querySelectorAll('tr')].some(r => r.textContent.includes('staff1@example.test') && r.textContent.includes('회수됨'))")
-    after = page.locator("tr", has_text="staff1@example.test").locator(".badge", has_text="회수됨").count()
+    page.wait_for_function("() => [...document.querySelectorAll('tr')].some(r => r.textContent.includes('staff1@example.invalid') && r.textContent.includes('회수됨'))")
+    after = page.locator("tr", has_text="staff1@example.invalid").locator(".badge", has_text="회수됨").count()
     audit = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0].action")
     verify = page.evaluate("async () => (await (await fetch('/api/admin/audit/verify')).json()).ok")
     # 키보드 포커스 표시: 새로 연 페이지에서 Tab 으로 첫 카드까지 이동
@@ -287,8 +334,10 @@ def main():
     srv_stale = start_server(8802, stale=True)
     srv_auto = start_server(8803, autosync=True)
     srv_nocctv = start_server(8804, cctv=False)
+    srv_unknown = start_server(8805, autosync=True, syncfail="zz_future_code")
+    srv_dict = start_server(8806, autosync=True, syncfail="missing_group")
     base, base_stale, base_auto = "http://127.0.0.1:8801", "http://127.0.0.1:8802", "http://127.0.0.1:8803"
-    base_nocctv = "http://127.0.0.1:8804"
+    base_nocctv, base_unknown, base_dict = "http://127.0.0.1:8804", "http://127.0.0.1:8805", "http://127.0.0.1:8806"
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(executable_path=CHROMIUM if os.path.exists(CHROMIUM) else None)
@@ -323,7 +372,16 @@ def main():
             # WP1: 자동 동기화가 켜진 관리 화면 (수동 입력란은 닫히고 실패 사유가 보인다)
             shoot(browser, base_auto, "admin-sync-auto-ko-1440", "admin", 1440, 900,
                   expect=lambda p, c: ([] if p.locator("text=api_http_403").count() == 1 else ["sync failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 1 and "HTTP 403" in p.locator(".sync-why").inner_text() else ["sync failure explanation missing"])
                   + ([] if p.locator("textarea").count() == 0 else ["manual snapshot form still open"]))
+            # 사전에 없는 실패 코드 → 코드만 보이고 설명(.sync-why)은 없어야 한다 (뜻을 지어내지 않는다)
+            shoot(browser, base_unknown, "admin-sync-unknown-ko-1440", "admin", 1440, 900,
+                  expect=lambda p, c: ([] if p.locator("text=zz_future_code").count() == 1 else ["unknown failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 0 else ["explanation invented for unknown code"]))
+            # 사전에 있는 일반 코드(정규식 아님) → 사전 문구가 붙는다. 좁은 화면에서 줄바꿈도 함께 본다
+            shoot(browser, base_dict, "admin-sync-missing-ko-390", "admin", 390, 844,
+                  expect=lambda p, c: ([] if p.locator("text=missing_group").count() == 1 else ["dict failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 1 and "Access 에 필요한 그룹" in p.locator(".sync-why").inner_text() else ["dict explanation missing"]))
             shoot(browser, base_auto, "admin-sync-auto-ru-390", "admin", 390, 844, lang="ru")
             # R3 CCTV: 목록 · 꺼짐 안내 · 좁은 화면
             def cctv_list_ok(page, c):
@@ -345,7 +403,7 @@ def main():
             flow_revoke(browser, base)
             browser.close()
     finally:
-        for s in (srv, srv_stale, srv_auto, srv_nocctv):
+        for s in (srv, srv_stale, srv_auto, srv_nocctv, srv_unknown, srv_dict):
             s.terminate()
             s.wait(timeout=5)
     (SCREENS / "ui-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
