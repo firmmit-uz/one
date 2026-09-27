@@ -521,3 +521,16 @@ FIRMMIT 지시 "오류 테스트를 시작해 멈추지 말고 모든 페이지 
 
 시험: contracts 85건 · hub **313/313** · 변이 **59/59** 미검출 0 · typecheck 0 · 화면 **20장** + 흐름 3 실패 0 · 번들 623.0 KiB · showroom 38/38 · 27/27.
 (Z141–Z143 뒤 재실행: hub 313/313 · typecheck 0 · 화면 20장 + 흐름 3 실패 0.)
+
+## B-12. #14 경영진 전용 그룹 (Z144–Z147) · 2026-09-27
+
+FIRMMIT 지시 "#13 + #14 순차적으로 모두" — Phase 1.5 범위 밖을 지시로 넓힘 (R3 와 같은 방식). #14 먼저.
+
+| ID | 위치 | 상태 | 내용 |
+|---|---|---|---|
+| Z144 | `src/groupsync.ts` `test/groupsync.test.ts` | **수정함 (잠복 결함)** | 코드는 Access 그룹 이름을 `ALL`·`ADMIN` 으로 정확히 맞추는데, README·체크리스트는 **`FIRMMIT-ALL`** 로 만들라고 안내 → 운영에서는 필수 그룹이 전부 `missing_group` 이라 **동기화가 늘 실패**하고 30분 뒤 ADMIN 외 쓰기가 막혔을 것. Access 이름 = `FIRMMIT-` + 허브 그룹명으로 고정(`ACCESS_GROUP_PREFIX`), 접두어 없는 이름은 무시(fail-closed). 시험 픽스처를 Access 모양으로 바꾸고 "접두어 없는 `ALL` 은 우리 그룹이 아니다" 시험 + 변이 추가. #14 작업 중 발견 |
+| Z145 | `src/env.ts` `src/groupsync.ts` `src/authz.ts` | 수정함 | `EXEC` 그룹(Access `FIRMMIT-EXEC`) 추가 — 9번째. Access 에 아직 없을 수 있어 **선택 그룹**(FINANCE 와 같음). 주체에 `isExec`, 판정 한 곳 `canViewCctv(p) = isHubAdmin || isExec` |
+| Z146 | `src/guard.ts` `src/cctv.ts` `src/app.ts` `public/app.js` | 수정함 | CCTV **보기**(목록·열기·재생) 관문을 `requireCctvViewer` 로. 카메라 등록·수정·관리 화면은 `requireHubAdmin` 그대로. `/api/me` 에 `cctv_allowed`, CCTV 탭은 이 값으로만 표시 |
+| Z147 | `test/*` `README.md` 체크리스트 | 수정함 | 시험: EXEC 목록·열람(감사 EXEC 이름)·재생 200, 관리 API 3종 403, STAFF `cctv_allowed=false` · 그룹 9개 · EXEC 선택 · 변이 3종(접두어·EXEC 판정·보기 판정) · 화면 `cctv-exec-ko-1440`(CCTV 탭 보임·관리 탭 숨김). README 대응표 9행 + 접두어 규칙 명시, 체크리스트 3-8 갱신·PDF 재생성 |
+
+시험: hub **317/317** · 변이 **62/62** 미검출 0 · typecheck 0 · 화면 **21장** + 흐름 3 실패 0 · 번들 623.6 KiB.

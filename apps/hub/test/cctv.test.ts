@@ -15,7 +15,7 @@ import {
   type CameraRow,
 } from '../src/cctv';
 import type { Env } from '../src/env';
-import { ADMIN, createDb, json, makeEnv, NOW, seedOrg, STAFF, count, type CallInit } from './helpers';
+import { ADMIN, createDb, json, makeEnv, NOW, seedOrg, seedUser, STAFF, count, type CallInit } from './helpers';
 import { createLocalJWKSet, type JWK } from 'jose';
 import { makeKeys, signToken } from './helpers';
 
@@ -342,6 +342,34 @@ describe('CCTV API 권한', () => {
   it('로그인하지 않으면 401', async () => {
     const h = await cctvHarness();
     expect((await h.call('/api/cctv')).status).toBe(401);
+  });
+
+  // FIRMMIT 지시(2026-09-27): 경영진 전용 그룹 EXEC 는 CCTV **보기만** 된다.
+  it('EXEC 그룹: 목록·열람·영상은 되고, 카메라 등록·관리 화면은 403', async () => {
+    const h = await cctvHarness();
+    const EXEC = 'exec1@example.invalid';
+    seedUser(h.sqlite, { email: EXEC, name: '경영진1', groups: ['EXEC'], grants: [] });
+    addCamera(h.sqlite, { camera_id: 'cam-1' });
+    const t = await h.token(EXEC);
+    const me = await json(await h.call('/api/me', { token: t }));
+    expect(me).toMatchObject({ is_admin: false, cctv_allowed: true });
+    expect((await h.call('/api/cctv', { token: t })).status).toBe(200);
+    const opened = await h.call('/api/cctv/cam-1/open', { token: t, body: {} });
+    expect(opened.status).toBe(200);
+    // 열람 기록은 EXEC 이름으로 남는다
+    expect(count(h.sqlite, "SELECT COUNT(*) FROM audit_log WHERE action = 'cctv_view_open' AND actor_email = ?", EXEC)).toBe(1);
+    const { play_path } = await json(opened);
+    expect((await h.call(play_path, { token: t })).status).toBe(200);
+    // 관리 API 는 여전히 ADMIN 만
+    expect((await h.call('/api/admin/cctv', { token: t })).status).toBe(403);
+    expect((await h.call('/api/admin/cctv', { token: t, body: { camera_id: 'cam-9', name_ko: 'x', site: 'y', stream_kind: 'mp4', stream_path: '/a.mp4' } })).status).toBe(403);
+    expect((await h.call('/api/admin/users', { token: t })).status).toBe(403);
+  });
+
+  it('EXEC 아닌 직원의 /api/me 는 cctv_allowed=false, ADMIN 은 true', async () => {
+    const h = await cctvHarness();
+    expect(await json(await h.call('/api/me', { token: await h.token(STAFF) }))).toMatchObject({ cctv_allowed: false });
+    expect(await json(await h.call('/api/me', { token: await h.token(ADMIN) }))).toMatchObject({ cctv_allowed: true });
   });
 
   it('카메라 이름이 규칙에 안 맞으면 400 (경로 조작 차단)', async () => {

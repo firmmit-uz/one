@@ -1,7 +1,7 @@
 // Hono API 조립 (의존성 주입 가능: JWKS, 시계)
 import { Hono, type Context } from 'hono';
 import { authenticate, remoteJwks, type Identity, type JwksProvider } from './auth';
-import { canWrite, loadPrincipal, type Principal } from './authz';
+import { canViewCctv, canWrite, loadPrincipal, type Principal } from './authz';
 import { runAudited } from './audit';
 import { checkConfig } from './config';
 import type { Env } from './env';
@@ -134,6 +134,7 @@ export function createApp(deps: AppDeps = {}) {
       emp_id: p.empId,
       groups: p.groups,
       is_admin: p.isHubAdmin,
+      cctv_allowed: canViewCctv(p),
       roles: [...p.roles.values()].sort((a, b) => a.app_id.localeCompare(b.app_id)),
       snapshot: { synced_at: p.snapshotSyncedAt, stale: p.snapshotStale },
       auth_source: c.get('identity').source,

@@ -39,5 +39,7 @@ export function isRole(v: unknown): v is Role {
 
 export const HUB_APP_ID = 'hub';
 export const BREAKGLASS_GROUP = 'BREAKGLASS';
+/** 경영진 전용 그룹 — CCTV 보기만 허용 (관리 화면·카메라 등록은 ADMIN). FIRMMIT 지시 2026-09-27 */
+export const EXEC_GROUP = 'EXEC';
 export const GROUP_SYNC_KEY = 'access_groups';
 export const SNAPSHOT_MAX_AGE_MS = 30 * 60 * 1000;

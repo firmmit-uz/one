@@ -217,6 +217,33 @@
       "problems": []
     },
     {
+      "name": "cctv-exec-ko-1440",
+      "file": "test/screens/cctv-exec-ko-1440.png",
+      "viewport": "1440x900",
+      "user": "exec",
+      "lang": "ko",
+      "console_errors": [],
+      "unexpected_console_errors": [],
+      "external_requests": [],
+      "junkText": [],
+      "title": "FIRMMIT ONE 허브",
+      "overflowX": 0,
+      "smallTargets": [],
+      "cardLinks": 0,
+      "disabledCards": 0,
+      "badLinks": [],
+      "disabledWithLink": 0,
+      "greyText": 0,
+      "lowContrast": [],
+      "contrastUnchecked": [],
+      "iframes": 0,
+      "adminTabVisible": false,
+      "cctvTabVisible": true,
+      "alerts": [],
+      "logoRight": true,
+      "problems": []
+    },
+    {
       "name": "status-staff-ru-390",
       "file": "test/screens/status-staff-ru-390.png",
       "viewport": "390x844",
@@ -553,7 +580,7 @@
     {
       "name": "cctv_play_flow",
       "image": {
-        "src": "/api/cctv/akis-gh2/play?s=fe1c3283-9dc0-4c6c-9c47-b9589aafbed5&t=1790500302314",
+        "src": "/api/cctv/akis-gh2/play?s=20b61ff3-500e-437d-8937-9c6ae81ef517&t=1790501377873",
         "w": 640,
         "h": 360,
         "origin": "http://127.0.0.1:8801"

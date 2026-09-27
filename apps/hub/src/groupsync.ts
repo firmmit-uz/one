@@ -28,6 +28,7 @@ export const SYNC_GROUPS = [
   'ALL',
   'ADMIN',
   'BREAKGLASS',
+  'EXEC',
   'NONGJAJAE',
   'CONSTRUCTION',
   'RND',
@@ -35,12 +36,14 @@ export const SYNC_GROUPS = [
   'FINANCE',
 ] as const;
 
-/** FINANCE 는 Phase 2 예정이라 선택 그룹. 나머지는 없으면 전체 실패. */
-export const OPTIONAL_GROUPS = new Set<string>(['FINANCE']);
+/** FINANCE 는 Phase 2 예정, EXEC 는 Access 에 아직 없을 수 있어 선택 그룹. 나머지는 없으면 전체 실패. */
+export const OPTIONAL_GROUPS = new Set<string>(['FINANCE', 'EXEC']);
 export const REQUIRED_GROUPS = SYNC_GROUPS.filter((g) => !OPTIONAL_GROUPS.has(g));
 /** 이 그룹이 0명이 되면 관리자가 잠기므로 전체 실패로 본다. */
 export const LOCKOUT_GROUPS = ['ADMIN', 'BREAKGLASS'] as const;
 
+/** Access 규칙 그룹 이름 = 이 접두어 + 허브 그룹명 (README 배포 안내서 8 의 대응표). 접두어가 없으면 다른 그룹으로 보고 무시한다. */
+export const ACCESS_GROUP_PREFIX = 'FIRMMIT-';
 const SYNC_GROUP_SET = new Set<string>(SYNC_GROUPS);
 const SYNC_GROUP_ORDER: readonly string[] = SYNC_GROUPS;
 const API_BASE = 'https://api.cloudflare.com/client/v4';
@@ -180,9 +183,12 @@ export function parseGroups(result: unknown[]): { ok: true; groups: GroupMembers
   const found = new Map<string, string[]>();
   for (const g of result) {
     if (!isPlainObject(g)) return { ok: false, code: 'invalid_response' };
-    const name = g.name;
+    const accessName = g.name;
     // 이름 없는 그룹은 허용 목록에 있을 수 없으므로 건너뜀
-    if (typeof name !== 'string') continue;
+    if (typeof accessName !== 'string') continue;
+    // 'FIRMMIT-ALL' → 'ALL'. 접두어가 없는 'ALL' 은 우리 그룹이 아니다 (fail-closed).
+    if (!accessName.startsWith(ACCESS_GROUP_PREFIX)) continue; // MUTATION:ACCESS-PREFIX
+    const name = accessName.slice(ACCESS_GROUP_PREFIX.length);
     // 허용 목록 밖 그룹은 규칙 검사도 하지 않고 무시한다.
     // (Access 에는 everyone·도메인 규칙을 쓰는 다른 그룹이 있어, 검사하면 동기화가 늘 실패한다)
     if (!SYNC_GROUP_SET.has(name)) continue; // MUTATION:ALLOWLIST

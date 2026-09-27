@@ -158,13 +158,14 @@ npx wrangler d1 execute fm-one-hub --remote --env="" --file bootstrap-admins.sql
 ☐ `npx wrangler secret put CF_API_TOKEN --env=""` — **설정 파일에 넣지 않는다**
 ☐ 배포 후 15분 안에 관리 화면 *그룹 동기화* 의 **마지막 성공** 시각 갱신 확인
 
-**대상 그룹 8개**
+**대상 그룹 9개** — Access 이름은 반드시 `FIRMMIT-` 접두어 (코드가 이 이름으로 찾는다)
 
 | 허브 `group_name` | Cloudflare Access 그룹 | 용도 |
 |---|---|---|
 | ALL | FIRMMIT-ALL | 허브 입장 정책 (직원 전체, OTP) |
 | ADMIN | FIRMMIT-ADMIN | 허브 관리자 (개인 계정 2인 이상) |
 | BREAKGLASS | FIRMMIT-BREAKGLASS | Google 로그인만 |
+| EXEC | FIRMMIT-EXEC | 경영진 — CCTV 보기만 (선택) |
 | NONGJAJAE | FIRMMIT-NONGJAJAE | 농자재 유통 |
 | CONSTRUCTION | FIRMMIT-CONSTRUCTION | 견적 백오피스 |
 | RND | FIRMMIT-RND | 이천 수직농장 |
@@ -174,7 +175,7 @@ npx wrangler d1 execute fm-one-hub --remote --env="" --file bootstrap-admins.sql
 **실패 사유 코드**: `api_http_403` 토큰 권한 부족 · `missing_group` Access 에 그룹 없음 · `unknown_rule` 이메일 외 규칙 사용
 
 ☐ 각 그룹 Include/Exclude 는 **이메일 규칙만** (`Everyone` · `Emails ending in` · `Email list` · IP · 국가 규칙이 하나라도 있으면 전체 실패)
-☐ FINANCE 는 없어도 성공, **나머지 7개는 하나라도 없으면 전체 실패**
+☐ FINANCE·EXEC 는 없어도 성공, **나머지 7개는 하나라도 없으면 전체 실패**
 ☐ ADMIN 또는 BREAKGLASS 가 0명이면 실패 처리 (관리자 잠김 방지)
 
 ---

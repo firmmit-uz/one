@@ -280,8 +280,8 @@ function applyStaticText() {
   who.textContent = state.me ? state.me.email : '';
   const isAdmin = !!(state.me && state.me.is_admin === true);
   document.querySelector('[data-route="admin"]').hidden = !isAdmin;
-  // CCTV 화면도 ADMIN 에게만 보인다 (서버가 다시 한 번 막는다)
-  document.querySelector('[data-route="cctv"]').hidden = !isAdmin;
+  // CCTV 화면은 서버 판정(ADMIN 또는 EXEC 그룹)대로 보인다 — 서버가 다시 한 번 막는다
+  document.querySelector('[data-route="cctv"]').hidden = !(state.me && state.me.cctv_allowed === true);
   for (const tab of document.querySelectorAll('[data-route]')) {
     if (tab.getAttribute('data-route') === state.route) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');

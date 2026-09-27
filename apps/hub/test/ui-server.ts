@@ -30,6 +30,7 @@ seedUser(sqlite, {
     { app_id: 'nongjajae', role: 'ADMIN' },
   ],
 });
+seedUser(sqlite, { email: 'exec1@example.invalid', name: '최대표', empId: 'FM-000', groups: ['ALL', 'EXEC'], grants: [] });
 seedUser(sqlite, { email: 'rnd1@example.invalid', name: '박연구', groups: ['RND'], grants: [{ app_id: 'icheon-vfarm', role: 'OPERATOR', expires_at: iso(30 * 86_400_000) }] });
 seedUser(sqlite, { email: 'left@example.invalid', name: '퇴사자', status: 'revoked', groups: [] });
 setSynced(sqlite, process.env.STALE === '1' ? new Date(now.getTime() - 45 * 60_000) : now);
@@ -91,7 +92,7 @@ const fakeRelay = async (url: string): Promise<Response> => {
 };
 
 const app = createApp({ fetch: fakeRelay });
-const IDENTITIES: Record<string, string> = { admin: 'admin1@example.invalid', staff: 'staff1@example.invalid', stranger: 'nobody@example.invalid' };
+const IDENTITIES: Record<string, string> = { admin: 'admin1@example.invalid', staff: 'staff1@example.invalid', exec: 'exec1@example.invalid', stranger: 'nobody@example.invalid' };
 
 function staticHeaders(): Record<string, string> {
   const lines = readFileSync(join(PUBLIC, '_headers'), 'utf8').split('\n');

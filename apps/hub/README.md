@@ -34,7 +34,7 @@ apps/hub/
 └─ test/
    ├─ d1-adapter.ts          node:sqlite 기반 D1 대체 (실제 마이그레이션 SQL 실행)
    ├─ helpers.ts             로컬 RSA 키로 JWT 발급, 시험 조직 준비
-   ├─ *.test.ts              vitest 시험 8개 파일
+   ├─ *.test.ts              vitest 시험 12개 파일
    ├─ mutation.mjs           변이 시험
    ├─ ui-server.ts           UI 시험용 로컬 서버 (정적 파일 + 실제 API + 메모리 DB)
    ├─ ui_screens.py          Playwright(Chromium) 스크린샷·검사
@@ -171,7 +171,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    ```
    - 이메일은 반드시 **소문자**. 이 SQL 은 감사 체인 밖이므로 실행자·시각을 별첨 S 에 기록한다.
    - 대안(권장): ADMIN 1명만 SQL 로 만들고 두 번째 ADMIN 은 관리 화면(직원 등록 → 그룹 사본 → 권한 부여)으로 등록하면 감사기록에 남는다.
-8. **그룹 사본 동기화 (자동 — 설정이 없으면 수동)** — 아래 대응표의 8개 그룹만 대상이다.
+8. **그룹 사본 동기화 (자동 — 설정이 없으면 수동)** — 아래 대응표의 9개 그룹만 대상이다. **Access 그룹 이름은 반드시 `FIRMMIT-` + 허브 그룹명**이어야 한다(코드가 이 접두어로 찾는다. `ALL` 처럼 접두어 없는 이름은 다른 그룹으로 보고 무시).
 
    **8-a. 자동 동기화 (권장, 15분 Cron)**
    1. Cloudflare 대시보드 → My Profile → API Tokens → *Create Token* → Custom token.
@@ -182,7 +182,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    3. 토큰은 **설정 파일에 넣지 않는다** — `npx wrangler secret put CF_API_TOKEN --env=""` 로 Worker Secret 에만 넣는다. 토큰 값은 별첨 S 에 보관한다.
    4. 배포 후 15분 안에 관리 화면 *그룹 동기화* 영역에서 **마지막 성공** 시각이 갱신되는지 확인한다.
       실패하면 같은 영역에 사유 코드(`api_http_403` = 토큰 권한 부족, `missing_group` = Access 에 그룹이 없음, `unknown_rule` = 이메일 외 규칙 사용 등)가 뜬다.
-   - **Access 에 FIRMMIT-FINANCE 그룹이 아직 없어도 동기화는 성공한다** (선택 그룹 → 구성원 0명). 나머지 7개 그룹은 하나라도 없으면 전체 실패로 보고 기존 사본을 유지한다.
+   - **Access 에 FIRMMIT-FINANCE·FIRMMIT-EXEC 그룹이 아직 없어도 동기화는 성공한다** (선택 그룹 → 구성원 0명). 나머지 7개 그룹은 하나라도 없으면 전체 실패로 보고 기존 사본을 유지한다.
    - 각 그룹의 Include/Exclude 는 **이메일 규칙만** 써야 한다. `Everyone`·`Emails ending in`(도메인)·`Email list`·IP·국가 규칙이 하나라도 있으면 그 동기화 전체가 실패한다(fail-closed). Require 는 로그인 방식 조건(Login Methods / Authentication Method)만 허용하며 구성원 계산에 쓰지 않는다.
    - 계산 결과 ADMIN 또는 BREAKGLASS 가 0명이면 관리자 잠김을 막기 위해 실패로 처리하고 기존 사본을 유지한다.
    - 실패해도 사본과 마지막 성공 시각은 그대로다 → 30분이 지나면 기존 규칙대로 허브 ADMIN 외 쓰기가 막힌다.
@@ -196,6 +196,7 @@ npm run build:dry        # wrangler deploy --dry-run --outdir dist (로그인 �
    | ALL | FIRMMIT-ALL | 허브 입장 정책 그룹(직원 전체, OTP) |
    | ADMIN | FIRMMIT-ADMIN | 허브 관리자(개인 계정 2인 이상) |
    | BREAKGLASS | FIRMMIT-BREAKGLASS | firmmitinfo@gmail.com, Google 로그인만 |
+   | EXEC | FIRMMIT-EXEC | 경영진 — **CCTV 보기만** (관리 화면·카메라 등록 없음). 선택 그룹. FIRMMIT 지시 2026-09-27 |
    | NONGJAJAE | FIRMMIT-NONGJAJAE | 농자재 유통 |
    | CONSTRUCTION | FIRMMIT-CONSTRUCTION | 견적 백오피스 |
    | RND | FIRMMIT-RND | 이천 수직농장 |

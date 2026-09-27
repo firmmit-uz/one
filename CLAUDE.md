@@ -30,12 +30,12 @@ Phase 1.5 (WP1 그룹 동기화 · WP2 KPI 게이트웨이 + 공통 ID 검사기
 export WRANGLER_SEND_METRICS=false WRANGLER_SEND_ERROR_REPORTS=false
 npm ci                                # Node 22.13 이상
 npm test -w packages/contracts        # 85건(정상20·거부65) 불일치 0 · 변이 60/60 · 의미 17/17 · Worker 17/17 · ID 21/21
-npm test -w apps/hub                  # 12파일 · 313/313        (기준선 11파일 · 247/247)
+npm test -w apps/hub                  # 12파일 · 317/317        (기준선 11파일 · 247/247)
 npm run typecheck -w apps/hub         # 오류 0
-npm run test:mutation -w apps/hub     # 59/59 검출 · 미검출 0    (기준선 27/27)
+npm run test:mutation -w apps/hub     # 62/62 검출 · 미검출 0    (기준선 27/27)
 npm run test:bundle -w apps/hub       # 9/9 · 금지 구문 0건
-npm run build:dry -w apps/hub         # 약 623.0 KiB            (기준선 약 605.9 KiB — 배포 아님, 크기는 기록만)
-npm run test:ui -w apps/hub           # 화면 20장 + 흐름 3 · 콘솔 오류 0  (기준선 14장 + 흐름 1) (Python Playwright 필요)
+npm run build:dry -w apps/hub         # 약 623.6 KiB            (기준선 약 605.9 KiB — 배포 아님, 크기는 기록만)
+npm run test:ui -w apps/hub           # 화면 21장 + 흐름 3 · 콘솔 오류 0  (기준선 14장 + 흐름 1) (Python Playwright 필요)
 npm test -w apps/showroom             # 38/38
 npm run test:ui -w apps/showroom      # 27/27 · 캡처 7장 · 외부 요청 0건
 ```

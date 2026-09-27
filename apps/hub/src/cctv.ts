@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import type { HubEnv } from './app';
 import { runAudited } from './audit';
 import type { Env } from './env';
-import { requireHubAdmin } from './guard';
+import { requireCctvViewer } from './guard';
 import { ApiError } from './http';
 import { CONTROL_RE, objectOf, readJsonBody, str, ValidationError } from './validate';
 
@@ -403,7 +403,7 @@ export function cctvRoutes(deps: CctvDeps) {
   const r = new Hono<HubEnv>();
 
   // ADMIN 전용 (서버가 최종 판정). 관리 API 와 같은 관문을 쓴다.
-  r.use('*', requireHubAdmin);
+  r.use('*', requireCctvViewer);
 
   // 목록: 경로·중계 서버 주소는 내보내지 않는다
   r.get('/', async (c) => {

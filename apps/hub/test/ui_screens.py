@@ -368,6 +368,11 @@ def main():
             shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn",
                   expect=lambda p, c: admin_tab_visible(False)(p, c) + uz_date_ok(p, c))
             shoot(browser, base, "home-staff-ru-390", "home", 390, 844, as_user="staff", lang="ru")
+            # 경영진(EXEC 그룹): CCTV 탭은 보이고 관리 탭은 숨는다 — 서버 판정(cctv_allowed)대로
+            shoot(browser, base, "cctv-exec-ko-1440", "cctv", 1440, 900, as_user="exec",
+                  expect=lambda p, c: ([] if c["cctvTabVisible"] else ["cctv tab hidden for exec"])
+                  + ([] if not c["adminTabVisible"] else ["admin tab visible for exec"])
+                  + ([] if p.get_by_role("button", name="영상 보기").count() >= 2 else ["exec cannot see cameras"]))
             shoot(browser, base, "status-staff-ru-390", "status", 390, 844, as_user="staff", lang="ru")
             shoot(browser, base, "me-staff-ko-390", "me", 390, 844, as_user="staff")
             shoot(browser, base, "status-error-ko-1440", "status", 1440, 900, as_user="staff", fail="status",

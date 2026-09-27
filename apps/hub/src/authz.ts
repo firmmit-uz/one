@@ -1,6 +1,7 @@
 // 권한 판정: 매 요청 D1 에서 캐시 없이 조회
 import {
   BREAKGLASS_GROUP,
+  EXEC_GROUP,
   GROUP_SYNC_KEY,
   HUB_APP_ID,
   SNAPSHOT_MAX_AGE_MS,
@@ -43,6 +44,8 @@ export interface Principal {
   snapshotStale: boolean;
   roles: Map<string, EffectiveRole>;
   isHubAdmin: boolean;
+  /** EXEC 그룹 사본에 있음 — CCTV 보기만 허용 */
+  isExec: boolean;
   isBreakglass: boolean;
 }
 
@@ -147,8 +150,14 @@ export async function loadPrincipal(db: D1Database, email: string, now: Date): P
       roles,
       isHubAdmin: roles.get(HUB_APP_ID)?.role === 'ADMIN',
       isBreakglass: groupSet.has(BREAKGLASS_GROUP),
+      isExec: groupSet.has(EXEC_GROUP), // MUTATION:AUTHZ-EXEC-GROUP
     },
   };
+}
+
+// CCTV 보기: 허브 ADMIN 또는 EXEC 그룹. 관문과 /api/me 가 같은 판정을 쓴다.
+export function canViewCctv(p: Principal): boolean {
+  return p.isHubAdmin || p.isExec; // MUTATION:AUTHZ-CCTV-VIEW
 }
 
 // 쓰기 허용: 그룹 사본이 신선하거나, 허브 ADMIN
