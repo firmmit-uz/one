@@ -57,15 +57,15 @@ describe('런처 목록', () => {
   });
 
   it('그룹에는 있지만 역할 없음 → 업무 앱 안 보임', async () => {
-    const { ids } = await appsFor('rnd@example.test', (h) => seedUser(h.sqlite, { email: 'rnd@example.test', groups: ['RND'] }));
+    const { ids } = await appsFor('rnd@example.invalid', (h) => seedUser(h.sqlite, { email: 'rnd@example.invalid', groups: ['RND'] }));
     expect(ids).not.toContain('icheon-vfarm');
     expect(ids.filter((i) => PUBLIC.includes(i))).toHaveLength(PUBLIC.length);
   });
 
   it('역할은 있지만 required_group 에 없음 → 안 보임', async () => {
-    const { ids } = await appsFor('x@example.test', (h) => {
+    const { ids } = await appsFor('x@example.invalid', (h) => {
       h.sqlite.prepare("INSERT INTO group_ceiling (group_name, app_id, max_role) VALUES ('KR', '*', 'VIEWER')").run();
-      seedUser(h.sqlite, { email: 'x@example.test', groups: ['KR'], grants: [{ app_id: 'amim', role: 'VIEWER' }] });
+      seedUser(h.sqlite, { email: 'x@example.invalid', groups: ['KR'], grants: [{ app_id: 'amim', role: 'VIEWER' }] });
     });
     expect(ids).not.toContain('amim');
   });
@@ -89,8 +89,8 @@ describe('런처 목록', () => {
   });
 
   it('관리 콘솔: 허브 ADMIN 이라도 required_group(ADMIN) 밖이면 안 보임', async () => {
-    const { ids } = await appsFor('bg@example.test', (h) =>
-      seedUser(h.sqlite, { email: 'bg@example.test', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] }),
+    const { ids } = await appsFor('bg@example.invalid', (h) =>
+      seedUser(h.sqlite, { email: 'bg@example.invalid', groups: ['BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] }),
     );
     expect(ids).not.toContain('ahost');
   });

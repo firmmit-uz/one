@@ -139,7 +139,7 @@ describe('가용성 점검', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       const ctrl = { cron: '*/5 * * * *', scheduledTime: NOW.getTime(), noRetry() {} } as unknown as ScheduledController;
-      await worker.scheduled!(ctrl, makeEnv(d1, { DEV_FAKE_IDENTITY: 'x@example.test' }), ctx);
+      await worker.scheduled!(ctrl, makeEnv(d1, { DEV_FAKE_IDENTITY: 'x@example.invalid' }), ctx);
       expect(waits).toHaveLength(0);
       expect(m.fn).not.toHaveBeenCalled();
       await worker.scheduled!(ctrl, makeEnv(d1), ctx);

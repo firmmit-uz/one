@@ -29,9 +29,11 @@ def bundle():
     )
 
 
-def start_server(port, stale=False, autosync=False):
+def start_server(port, stale=False, autosync=False, cctv=True, syncfail=None):
     env = dict(os.environ, PORT=str(port), STALE="1" if stale else "0",
-               AUTOSYNC="1" if autosync else "0", NODE_NO_WARNINGS="1")
+               AUTOSYNC="1" if autosync else "0", CCTV="on" if cctv else "off", NODE_NO_WARNINGS="1")
+    if syncfail:
+        env["SYNCFAIL_CODE"] = syncfail
     proc = subprocess.Popen(["node", str(BUNDLE)], cwd=HUB, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -61,6 +63,47 @@ PAGE_CHECKS_JS = """
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const junk = [];
   while (walker.nextNode()) { const v = walker.currentNode.textContent.trim(); if (/^(null|undefined|NaN|\[object Object\])$/.test(v)) junk.push(v); }
+  // 실제로 그려진 글자마다 대비를 잰다 (WCAG 2.2 AA: 본문 4.5:1 · 큰 글자 3:1).
+  // 토큰만 보면 놓치는 조합(겹친 배경·상태별 색)을 화면에서 직접 잡기 위한 검사다.
+  const rgb = (v) => { const m = /rgba?\(([^)]+)\)/.exec(v); if (!m) return null;
+    const p = m[1].split(',').map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const rel = (c) => { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  const ratio = (a, b) => { const l1 = rel(a), l2 = rel(b); const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+    return (hi + 0.05) / (lo + 0.05); };
+  const bgOf = (e) => { let n = e;
+    while (n && n !== document.documentElement) { const c = rgb(getComputedStyle(n).backgroundColor);
+      if (c && c.a === 1) return c; n = n.parentElement; }
+    return { r: 255, g: 255, b: 255, a: 1 }; };
+  const lowContrast = [];
+  const contrastUnchecked = []; // 색을 읽지 못해 재지 못한 글자 — 하나라도 있으면 실패 (조용히 통과시키지 않는다)
+  const w2 = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (w2.nextNode()) {
+    const node = w2.currentNode;
+    const text = node.textContent.trim();
+    if (!text) continue;
+    const e = node.parentElement;
+    if (!e || !vis(e)) continue;
+    if (e.closest('.visually-hidden, .skip-link')) continue;
+    if (e.closest('button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled=true]')) continue;
+    const st = getComputedStyle(e);
+    const fg = rgb(st.color);
+    if (!fg || fg.a < 1) { contrastUnchecked.push(`${text.slice(0, 24)} :: color ${st.color}`); continue; }
+    let bgNode = e, bgHit = null;
+    while (bgNode && bgNode !== document.documentElement) {
+      const c = rgb(getComputedStyle(bgNode).backgroundColor);
+      if (c && c.a === 1) { bgHit = c; break; }
+      if (c && c.a > 0) { bgHit = 'translucent'; break; }
+      bgNode = bgNode.parentElement;
+    }
+    if (bgHit === 'translucent') { contrastUnchecked.push(`${text.slice(0, 24)} :: translucent background`); continue; }
+    const size = parseFloat(st.fontSize);
+    const weight = Number(st.fontWeight) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const need = large ? 3 : 4.5;
+    const got = ratio(fg, bgOf(e));
+    if (got + 0.005 < need) lowContrast.push(`${text.slice(0, 24)} :: ${st.color} on bg ${got.toFixed(2)}:1 < ${need}`);
+  }
   return {
     junkText: junk,
     lang: document.documentElement.lang,
@@ -69,9 +112,10 @@ PAGE_CHECKS_JS = """
     smallTargets: small,
     cardLinks: cards.length,
     disabledCards: document.querySelectorAll('.card-disabled').length,
-    badLinks, disabledWithLink, greyText,
+    badLinks, disabledWithLink, greyText, lowContrast, contrastUnchecked,
     iframes: document.querySelectorAll('iframe').length,
     adminTabVisible: !document.querySelector('[data-route=admin]').hidden,
+    cctvTabVisible: !document.querySelector('[data-route=cctv]').hidden,
     alerts: [...document.querySelectorAll('[role=alert]')].map((a) => a.textContent.replace(/\\s+/g, ' ').trim()).slice(0, 3),
     logoRight: (() => { const l = document.querySelector('.logo').getBoundingClientRect(); return l.right > window.innerWidth - 40 && l.right <= window.innerWidth && l.top < 60; })(),
   };
@@ -116,6 +160,10 @@ def shoot(browser, base, name, route, width, height, as_user="admin", lang="ko",
         problems.append(f"stray text nodes: {checks['junkText']}")
     if checks["greyText"]:
         problems.append(f"#9898A0 used as text color on {checks['greyText']} elements")
+    if checks["lowContrast"]:
+        problems.append(f"low contrast text: {checks['lowContrast']}")
+    if checks["contrastUnchecked"]:
+        problems.append(f"contrast not measurable: {checks['contrastUnchecked']}")
     if not checks["logoRight"]:
         problems.append("logo not at top right")
     if checks["lang"] != lang:
@@ -129,6 +177,94 @@ def shoot(browser, base, name, route, width, height, as_user="admin", lang="ko",
     ctx.close()
 
 
+def flow_cctv_play(browser, base):
+    """CCTV: 영상 보기 → 열람 기록 1건 → 같은 출처에서만 받아옴 → 닫기."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    ctx.set_extra_http_headers({"x-test-as": "admin"})
+    page = ctx.new_page()
+    errors, external = [], []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.on("request", lambda r: external.append(r.url) if not r.url.startswith(base) else None)
+    page.goto(f"{base}/#/cctv")
+    page.wait_for_selector("table tbody tr")
+    before = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0].action")
+    # 사진 방식 카메라(AKIS 온실 2동)를 연다 — 가짜 중계 서버가 고정 그림 1장을 준다
+    page.locator("tr", has_text="AKIS 온실 2동").get_by_role("button", name="영상 보기").click()
+    page.wait_for_selector(".cctv-stage img.cctv-media")
+    page.wait_for_function("() => { const i = document.querySelector('.cctv-stage img'); return i && i.complete && i.naturalWidth > 0; }", timeout=5000)
+    img = page.evaluate("""() => { const i = document.querySelector('.cctv-stage img');
+        return { src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight, origin: new URL(i.src).origin }; }""")
+    after = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0]")
+    page.screenshot(path=str(SCREENS / "cctv-play-ko-1440.png"), full_page=True)
+    page.get_by_role("button", name="닫기").click()
+    page.wait_for_function("() => !document.querySelector('.cctv-stage img')")
+    closed = page.evaluate("() => document.querySelectorAll('.cctv-stage img, .cctv-stage video').length")
+    ctx.close()
+
+    probs = []
+    if not img["src"].startswith("/api/cctv/"):
+        probs.append(f"stream not same-origin path: {img['src']}")
+    if img["origin"] != base:
+        probs.append(f"stream origin {img['origin']} != {base}")
+    if img["w"] < 100:
+        probs.append(f"image did not load: {img}")
+    if before == "cctv_view_open":
+        probs.append("audit already had cctv_view_open before opening")
+    if after.get("action") != "cctv_view_open" or after.get("target") != "camera:akis-gh2":
+        probs.append(f"cctv open not audited: {after.get('action')} {after.get('target')}")
+    detail = str(after.get("detail"))
+    if "relay.example.test" in detail or "/snapshot/" in detail:
+        probs.append("relay address or path leaked into audit detail")
+    if closed != 0:
+        probs.append("player not removed after close")
+    if external:
+        probs.append(f"external requests: {external}")
+    if errors:
+        probs.append(f"console errors {errors}")
+    report["flows"].append({"name": "cctv_play_flow", "image": img, "audit": {"action": after.get("action"), "target": after.get("target")},
+                            "external_requests": external, "console_errors": errors, "problems": probs})
+    report["failures"] += [f"cctv_play_flow: {p}" for p in probs]
+
+
+def flow_cctv_mobile_actions(browser, base):
+    """CCTV 390px: 접힌 표에서도 상태 배지와 '영상 보기' 단추가 보여야 한다 (B단계 회귀 방지)."""
+    ctx = browser.new_context(viewport={"width": 390, "height": 844})
+    ctx.set_extra_http_headers({"x-test-as": "admin"})
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.goto(f"{base}/#/cctv")
+    page.wait_for_selector("table tbody tr")
+    row = page.locator("tr", has_text="AKIS 온실 2동")
+    btn = row.get_by_role("button", name="영상 보기")
+    badge = row.locator(".badge")
+    visible = {"button": btn.is_visible(), "badge": badge.first.is_visible(),
+               "hidden_cells": row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")}
+    # 펼치면 나머지 열이 나온다
+    row.get_by_role("button", name="자세히 보기").click()
+    expanded_hidden = row.locator("td").evaluate_all("tds => tds.filter(td => getComputedStyle(td).display === 'none').length")
+    overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    ctx.close()
+    probs = []
+    if not visible["button"]:
+        probs.append("'영상 보기' button hidden on 390px")
+    if not visible["badge"]:
+        probs.append("state badge hidden on 390px")
+    if visible["hidden_cells"] == 0:
+        probs.append("nothing collapsed on 390px (expected 시설·방식 hidden)")
+    if expanded_hidden != 0:
+        probs.append(f"{expanded_hidden} cells still hidden after expand")
+    if overflow > 0:
+        probs.append(f"horizontal overflow {overflow}px")
+    if errors:
+        probs.append(f"console errors {errors}")
+    report["flows"].append({"name": "cctv_mobile_actions", "visible": visible, "expanded_hidden": expanded_hidden, "overflow": overflow,
+                            "console_errors": errors, "problems": probs})
+    report["failures"] += [f"cctv_mobile_actions: {p}" for p in probs]
+
+
 def flow_revoke(browser, base):
     """관리 화면에서 회수 → 확인 → 목록 갱신, 키보드 포커스 표시 확인."""
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
@@ -138,13 +274,13 @@ def flow_revoke(browser, base):
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.goto(f"{base}/#/admin")
     page.wait_for_selector("text=Aziz Karimov")
-    row = page.locator("tr", has_text="staff1@example.test")
+    row = page.locator("tr", has_text="staff1@example.invalid")
     before = row.locator(".badge", has_text="회수됨").count()
     row.get_by_role("button", name="회수", exact=True).first.click()
     page.get_by_role("button", name="회수 확인").click()
     page.wait_for_selector(".toast >> text=저장되었습니다")
-    page.wait_for_function("() => [...document.querySelectorAll('tr')].some(r => r.textContent.includes('staff1@example.test') && r.textContent.includes('회수됨'))")
-    after = page.locator("tr", has_text="staff1@example.test").locator(".badge", has_text="회수됨").count()
+    page.wait_for_function("() => [...document.querySelectorAll('tr')].some(r => r.textContent.includes('staff1@example.invalid') && r.textContent.includes('회수됨'))")
+    after = page.locator("tr", has_text="staff1@example.invalid").locator(".badge", has_text="회수됨").count()
     audit = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0].action")
     verify = page.evaluate("async () => (await (await fetch('/api/admin/audit/verify')).json()).ok")
     # 키보드 포커스 표시: 새로 연 페이지에서 Tab 으로 첫 카드까지 이동
@@ -197,13 +333,18 @@ def main():
     srv = start_server(8801)
     srv_stale = start_server(8802, stale=True)
     srv_auto = start_server(8803, autosync=True)
+    srv_nocctv = start_server(8804, cctv=False)
+    srv_unknown = start_server(8805, autosync=True, syncfail="zz_future_code")
+    srv_dict = start_server(8806, autosync=True, syncfail="missing_group")
     base, base_stale, base_auto = "http://127.0.0.1:8801", "http://127.0.0.1:8802", "http://127.0.0.1:8803"
+    base_nocctv, base_unknown, base_dict = "http://127.0.0.1:8804", "http://127.0.0.1:8805", "http://127.0.0.1:8806"
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(executable_path=CHROMIUM if os.path.exists(CHROMIUM) else None)
 
             def admin_tab_visible(expected):
-                return lambda page, c: [] if c["adminTabVisible"] == expected else [f"admin tab visible={c['adminTabVisible']}"]
+                return lambda page, c: ([] if c["adminTabVisible"] == expected else [f"admin tab visible={c['adminTabVisible']}"]) \
+                    + ([] if c["cctvTabVisible"] == expected else [f"cctv tab visible={c['cctvTabVisible']}"])
 
             def has_disabled(page, c):
                 return [] if c["disabledCards"] >= 3 and c["cardLinks"] >= 8 else [f"cards {c['cardLinks']} disabled {c['disabledCards']}"]
@@ -214,10 +355,24 @@ def main():
             shoot(browser, base, "home-admin-ko-1440", "home", 1440, 900, expect=lambda p, c: has_disabled(p, c) + admin_tab_visible(True)(p, c))
             shoot(browser, base, "home-admin-ko-390", "home", 390, 844)
             shoot(browser, base, "status-admin-ko-1440", "status", 1440, 900)
+            # 좁은 화면에서 열이 많은 표가 접히는지 (B단계 행 펼치기)
+            shoot(browser, base, "status-admin-ko-390", "status", 390, 844)
             shoot(browser, base, "admin-ko-1440", "admin", 1440, 900)
             shoot(browser, base, "admin-ko-390", "admin", 390, 844)
-            shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn", expect=admin_tab_visible(False))
+            def uz_date_ok(page, c):
+                import re
+                txt = page.locator("main").inner_text()
+                if re.search(r"\bM\d{2}\b", txt):
+                    return ["uz date fell back to ICU placeholder (M09)"]
+                return [] if re.search(r"\b\d{1,2}-(yan|fev|mar|apr|may|iyn|iyl|avg|sen|okt|noy|dek), \d{4}, \d{2}:\d{2}\b", txt) else ["uz date format missing"]
+            shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn",
+                  expect=lambda p, c: admin_tab_visible(False)(p, c) + uz_date_ok(p, c))
             shoot(browser, base, "home-staff-ru-390", "home", 390, 844, as_user="staff", lang="ru")
+            # 경영진(EXEC 그룹): CCTV 탭은 보이고 관리 탭은 숨는다 — 서버 판정(cctv_allowed)대로
+            shoot(browser, base, "cctv-exec-ko-1440", "cctv", 1440, 900, as_user="exec",
+                  expect=lambda p, c: ([] if c["cctvTabVisible"] else ["cctv tab hidden for exec"])
+                  + ([] if not c["adminTabVisible"] else ["admin tab visible for exec"])
+                  + ([] if p.get_by_role("button", name="영상 보기").count() >= 2 else ["exec cannot see cameras"]))
             shoot(browser, base, "status-staff-ru-390", "status", 390, 844, as_user="staff", lang="ru")
             shoot(browser, base, "me-staff-ko-390", "me", 390, 844, as_user="staff")
             shoot(browser, base, "status-error-ko-1440", "status", 1440, 900, as_user="staff", fail="status",
@@ -229,12 +384,51 @@ def main():
             # WP1: 자동 동기화가 켜진 관리 화면 (수동 입력란은 닫히고 실패 사유가 보인다)
             shoot(browser, base_auto, "admin-sync-auto-ko-1440", "admin", 1440, 900,
                   expect=lambda p, c: ([] if p.locator("text=api_http_403").count() == 1 else ["sync failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 1 and "HTTP 403" in p.locator(".sync-why").inner_text() else ["sync failure explanation missing"])
                   + ([] if p.locator("textarea").count() == 0 else ["manual snapshot form still open"]))
+            # 사전에 없는 실패 코드 → 코드만 보이고 설명(.sync-why)은 없어야 한다 (뜻을 지어내지 않는다)
+            shoot(browser, base_unknown, "admin-sync-unknown-ko-1440", "admin", 1440, 900,
+                  expect=lambda p, c: ([] if p.locator("text=zz_future_code").count() == 1 else ["unknown failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 0 else ["explanation invented for unknown code"]))
+            # 사전에 있는 일반 코드(정규식 아님) → 사전 문구가 붙는다. 좁은 화면에서 줄바꿈도 함께 본다
+            shoot(browser, base_dict, "admin-sync-missing-ko-390", "admin", 390, 844,
+                  expect=lambda p, c: ([] if p.locator("text=missing_group").count() == 1 else ["dict failure code missing"])
+                  + ([] if p.locator(".sync-why").count() == 1 and "Access 에 필요한 그룹" in p.locator(".sync-why").inner_text() else ["dict explanation missing"]))
             shoot(browser, base_auto, "admin-sync-auto-ru-390", "admin", 390, 844, lang="ru")
+            # R3 CCTV: 목록 · 꺼짐 안내 · 좁은 화면
+            def cctv_list_ok(page, c):
+                out = []
+                if page.locator("table tbody tr").count() != 3:
+                    out.append("cctv rows != 3")
+                # 미연결 카메라의 '영상 보기' 는 눌리지 않아야 한다
+                if page.locator("button:disabled", has_text="영상 보기").count() != 1:
+                    out.append(f"disabled open buttons={page.locator('button:disabled', has_text='영상 보기').count()}")
+                return out
+
+            shoot(browser, base, "cctv-admin-ko-1440", "cctv", 1440, 900, expect=cctv_list_ok)
+            # 녹화 다시보기: 틀이 있는 1동만 단추가 살아 있고, 누르면 구간 폼이 열린다
+            def clip_form_ok(page, c):
+                btns = page.get_by_role("button", name="다시보기")
+                out = [] if btns.count() == 3 else [f"playback buttons {btns.count()}"]
+                enabled = [i for i in range(btns.count()) if btns.nth(i).is_enabled()]
+                out += [] if enabled == [0] else [f"playback enabled rows {enabled}"]
+                btns.nth(0).click()
+                page.wait_for_selector(".cctv-clip")
+                out += [] if page.locator(".cctv-clip input[type=date]").count() == 1 else ["clip date input missing"]
+                page.screenshot(path=str(SCREENS / "cctv-playback-form-ko-1440.png"), full_page=True)
+                return out
+            shoot(browser, base, "cctv-playback-ko-1440", "cctv", 1440, 900, expect=clip_form_ok)
+            shoot(browser, base, "cctv-admin-ko-390", "cctv", 390, 844)
+            shoot(browser, base_nocctv, "cctv-off-ko-1440", "cctv", 1440, 900,
+                  expect=lambda p, c: ([] if p.locator(".alert-warn").count() >= 1 else ["cctv off notice missing"])
+                  + ([] if p.locator("button:disabled", has_text="영상 보기").count() == 3 else ["cameras should not be playable when off"])
+                  + ([] if p.locator("button:disabled", has_text="다시보기").count() == 3 else ["playback should be off when cctv off"]))
+            flow_cctv_play(browser, base)
+            flow_cctv_mobile_actions(browser, base)
             flow_revoke(browser, base)
             browser.close()
     finally:
-        for s in (srv, srv_stale, srv_auto):
+        for s in (srv, srv_stale, srv_auto, srv_nocctv, srv_unknown, srv_dict):
             s.terminate()
             s.wait(timeout=5)
     (SCREENS / "ui-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))

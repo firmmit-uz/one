@@ -15,11 +15,11 @@ const { sqlite, d1 } = createDb();
 const now = new Date();
 const iso = (ms: number) => new Date(now.getTime() + ms).toISOString();
 
-// 가짜 조직 (example.test 도메인만)
-seedUser(sqlite, { email: 'admin1@example.test', name: '김관리', empId: 'FM-001', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'ADMIN' }, { app_id: 'ahost', role: 'OPERATOR' }] });
-seedUser(sqlite, { email: 'admin2@example.test', name: '이관리', groups: ['ADMIN', 'BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
+// 가짜 조직 (이메일은 @example.invalid, 호스트 이름은 *.example.test)
+seedUser(sqlite, { email: 'admin1@example.invalid', name: '김관리', empId: 'FM-001', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'ADMIN' }, { app_id: 'ahost', role: 'OPERATOR' }] });
+seedUser(sqlite, { email: 'admin2@example.invalid', name: '이관리', groups: ['ADMIN', 'BREAKGLASS'], grants: [{ app_id: 'hub', role: 'ADMIN' }] });
 seedUser(sqlite, {
-  email: 'staff1@example.test',
+  email: 'staff1@example.invalid',
   name: 'Aziz Karimov',
   empId: 'UZ-017',
   groups: ['UZ', 'NONGJAJAE'],
@@ -30,19 +30,22 @@ seedUser(sqlite, {
     { app_id: 'nongjajae', role: 'ADMIN' },
   ],
 });
-seedUser(sqlite, { email: 'rnd1@example.test', name: '박연구', groups: ['RND'], grants: [{ app_id: 'icheon-vfarm', role: 'OPERATOR', expires_at: iso(30 * 86_400_000) }] });
-seedUser(sqlite, { email: 'left@example.test', name: '퇴사자', status: 'revoked', groups: [] });
+seedUser(sqlite, { email: 'exec1@example.invalid', name: '최대표', empId: 'FM-000', groups: ['ALL', 'EXEC'], grants: [] });
+seedUser(sqlite, { email: 'rnd1@example.invalid', name: '박연구', groups: ['RND'], grants: [{ app_id: 'icheon-vfarm', role: 'OPERATOR', expires_at: iso(30 * 86_400_000) }] });
+seedUser(sqlite, { email: 'left@example.invalid', name: '퇴사자', status: 'revoked', groups: [] });
 setSynced(sqlite, process.env.STALE === '1' ? new Date(now.getTime() - 45 * 60_000) : now);
 
 // WP1 자동 동기화 화면 (AUTOSYNC=1): 마지막 시도가 실패한 상태를 보여준다
 const AUTO_SYNC = process.env.AUTOSYNC === '1';
+// SYNCFAIL_CODE 로 실패 코드를 바꿔 "사전에 없는 코드는 설명 없이 코드만" 분기를 찍는다
+const SYNC_FAIL_CODE = /^[a-z0-9_]{1,40}$/.test(process.env.SYNCFAIL_CODE ?? '') ? (process.env.SYNCFAIL_CODE as string) : 'api_http_403';
 if (AUTO_SYNC) {
   sqlite
     .prepare(
       `INSERT INTO group_sync_state (key, last_attempt_at, last_outcome, last_failure_code, last_failure_at, consecutive_failures, stale_audited_at)
-       VALUES ('access_groups', ?, 'failure', 'api_http_403', ?, 2, NULL)`,
+       VALUES ('access_groups', ?, 'failure', ?, ?, 2, NULL)`,
     )
-    .run(iso(-4 * 60_000), iso(-4 * 60_000));
+    .run(iso(-4 * 60_000), SYNC_FAIL_CODE, iso(-4 * 60_000));
 }
 
 // WP2: 홈 화면 KPI (가짜 값 — 실제 운영 수치 아님)
@@ -62,11 +65,34 @@ up.run('firmmit-mall', 'UP', 0, iso(-60_000), null, 200);
 
 const db = d1 as unknown as D1Database;
 await appendAudit(db, { ts: iso(-900_000), actor_email: 'system:cron', action: 'uptime_state_change', target: 'app:amim', detail: { from: 'UP', to: 'DOWN', consecutive_failures: 2, status_code: 503 }, request_id: 'cron-1' });
-await appendAudit(db, { ts: iso(-600_000), actor_email: 'admin1@example.test', action: 'grant_create', target: 'grant:1', detail: { email: 'staff1@example.test', app_id: 'amim', role: 'MANAGER', scope: 'UZ', expires_at: null, reason: null }, request_id: 'r-1' });
-await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.test', action: 'user_status_change', target: 'user:left@example.test', detail: { from: 'active', to: 'revoked', reason: '퇴사' }, request_id: 'r-2' });
+await appendAudit(db, { ts: iso(-600_000), actor_email: 'admin1@example.invalid', action: 'grant_create', target: 'grant:1', detail: { email: 'staff1@example.invalid', app_id: 'amim', role: 'MANAGER', scope: 'UZ', expires_at: null, reason: null }, request_id: 'r-1' });
+await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.invalid', action: 'user_status_change', target: 'user:left@example.invalid', detail: { from: 'active', to: 'revoked', reason: '퇴사' }, request_id: 'r-2' });
 
-const app = createApp();
-const IDENTITIES: Record<string, string> = { admin: 'admin1@example.test', staff: 'staff1@example.test', stranger: 'nobody@example.test' };
+// R3 CCTV 화면 (가짜 카메라 — 실제 카메라·중계 서버 아님)
+const cam = sqlite.prepare(
+  'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, playback_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+);
+cam.run('akis-gh1', 'AKIS 온실 1동', '타슈켄트 AKIS', 'mp4', '/live/akis-gh1.mp4', '/api/akis-gh1/start/{from}/end/{to}/clip.mp4', 'active', 10, now.toISOString(), now.toISOString());
+cam.run('akis-gh2', 'AKIS 온실 2동', '타슈켄트 AKIS', 'snapshot', '/snapshot/akis-gh2.jpg', null, 'active', 20, now.toISOString(), now.toISOString());
+cam.run('akis-nursery', 'AKIS 육묘장', '타슈켄트 AKIS', 'mp4', null, null, 'not_connected', 30, now.toISOString(), now.toISOString());
+
+// 화면 확인용 설정. CCTV=off 로 두면 "꺼짐" 안내 화면을 찍을 수 있다.
+const CCTV_ON = process.env.CCTV !== 'off';
+
+// 가짜 중계 서버. **실제 네트워크로 나가지 않는다** — 고정 그림 1장만 돌려준다.
+// (화면 시험은 외부 요청 0건이어야 한다. 실제 fetch 를 쓰면 relay.example.test 로 나간다.)
+const TEST_PATTERN = readFileSync(join(HUB_DIR, 'test', 'fixtures', 'cctv-test-pattern.jpg'));
+const fakeRelay = async (url: string): Promise<Response> => {
+  const path = new URL(url).pathname;
+  if (path.startsWith('/snapshot/')) {
+    return new Response(new Uint8Array(TEST_PATTERN), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  }
+  // 영상(mp4)은 만들어 두지 않았다 — 화면 시험에서는 사진 카메라만 연다.
+  return new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+};
+
+const app = createApp({ fetch: fakeRelay });
+const IDENTITIES: Record<string, string> = { admin: 'admin1@example.invalid', staff: 'staff1@example.invalid', exec: 'exec1@example.invalid', stranger: 'nobody@example.invalid' };
 
 function staticHeaders(): Record<string, string> {
   const lines = readFileSync(join(PUBLIC, '_headers'), 'utf8').split('\n');
@@ -135,6 +161,8 @@ createServer(async (req, res) => {
       DEV_FAKE_IDENTITY: IDENTITIES[as] ?? as,
       // 시험용 값 (실제 계정 정보 아님). 자동 동기화 화면 확인에만 쓰이고 외부 호출은 하지 않는다.
       ...(AUTO_SYNC ? { CF_ACCOUNT_ID: 'acct-test-0001', CF_API_TOKEN: 'test-token_0123456789' } : {}),
+      // 시험용 값. 실제 중계 서버가 아니며 화면 시험은 영상을 재생하지 않는다.
+      ...(CCTV_ON ? { CCTV_ENABLED: 'true', CCTV_RELAY_ORIGIN: 'https://relay.example.test', CCTV_RELAY_AUTH: 'none' } : {}),
     };
     const r = await app.fetch(request, env, { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext);
     const h: Record<string, string> = {};

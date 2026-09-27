@@ -21,10 +21,11 @@ const AUTO_ENV = { CF_ACCOUNT_ID: ACCOUNT, CF_API_TOKEN: TOKEN };
 
 const emailRule = (e: string) => ({ email: { email: e } });
 
+// Access 에서 오는 모양: 이름은 'FIRMMIT-' + 허브 그룹명 (README 대응표)
 function group(name: string, include: string[], exclude: string[] = [], extra: Record<string, unknown> = {}) {
   return {
     id: `id-${name.toLowerCase()}`,
-    name,
+    name: `FIRMMIT-${name}`,
     include: include.map(emailRule),
     exclude: exclude.map(emailRule),
     require: [],
@@ -158,7 +159,7 @@ describe('WP1 응답 해석', () => {
   it('정상: 구성원 = include − exclude, 소문자·중복 제거·정렬', () => {
     const r = parseGroups(
       defaultGroups().map((g) =>
-        g.name === 'ALL'
+        g.name === 'FIRMMIT-ALL'
           ? group('ALL', ['  B@Example.Invalid ', 'b@example.invalid', 'a@example.invalid', 'c@example.invalid'], ['c@EXAMPLE.invalid'])
           : g,
       ),
@@ -169,10 +170,10 @@ describe('WP1 응답 해석', () => {
   });
 
   it('허용 목록 밖 그룹은 무시', () => {
-    const r = parseGroups(defaultGroups([group('FIRMMIT-IT', ['it@example.invalid']), group('FIRMMIT-ICHEON-PILOT', ['p@example.invalid'])]));
+    const r = parseGroups(defaultGroups([group('IT', ['it@example.invalid']), group('ICHEON-PILOT', ['p@example.invalid'])]));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.groups.map((g) => g.group_name)).toEqual(['ALL', 'ADMIN', 'BREAKGLASS', 'NONGJAJAE', 'CONSTRUCTION', 'RND', 'UZ', 'FINANCE']);
+    expect(r.groups.map((g) => g.group_name)).toEqual(['ALL', 'ADMIN', 'BREAKGLASS', 'EXEC', 'NONGJAJAE', 'CONSTRUCTION', 'RND', 'UZ', 'FINANCE']);
   });
 
   it('FINANCE 가 없으면 구성원 0명 (정상)', () => {
@@ -182,25 +183,43 @@ describe('WP1 응답 해석', () => {
     expect(r.groups.find((g) => g.group_name === 'FINANCE')!.emails).toEqual([]);
   });
 
+  it('EXEC 는 선택 그룹: 없으면 0명, 있으면 그대로 사본에 들어간다', () => {
+    const none = parseGroups(defaultGroups());
+    expect(none.ok).toBe(true);
+    if (!none.ok) return;
+    expect(none.groups.find((g) => g.group_name === 'EXEC')!.emails).toEqual([]);
+    const some = parseGroups(defaultGroups([group('EXEC', ['ceo@example.invalid'])]));
+    expect(some.ok).toBe(true);
+    if (!some.ok) return;
+    expect(some.groups.find((g) => g.group_name === 'EXEC')!.emails).toEqual(['ceo@example.invalid']);
+  });
+
+  it("접두어 없는 'ALL' 은 우리 그룹이 아니다 — Access 이름은 반드시 FIRMMIT-ALL", () => {
+    // 접두어 없는 이름만 주면 필수 그룹이 하나도 없어 실패한다
+    const bare = defaultGroups().map((g) => ({ ...g, name: (g.name as string).slice('FIRMMIT-'.length) }));
+    const r = parseGroups(bare);
+    expect(r).toEqual({ ok: false, code: 'missing_group' });
+  });
+
   it('필수 그룹이 하나라도 없으면 전체 실패', () => {
     for (const missing of ['ALL', 'ADMIN', 'BREAKGLASS', 'NONGJAJAE', 'CONSTRUCTION', 'RND', 'UZ']) {
-      const r = parseGroups(defaultGroups().filter((g) => g.name !== missing));
+      const r = parseGroups(defaultGroups().filter((g) => g.name !== `FIRMMIT-${missing}`));
       expect(r, missing).toEqual({ ok: false, code: 'missing_group' });
     }
   });
 
   it('ADMIN·BREAKGLASS 가 0명이면 실패 (관리자 잠김 방지)', () => {
-    expect(parseGroups(defaultGroups().map((g) => (g.name === 'ADMIN' ? group('ADMIN', []) : g)))).toEqual({
+    expect(parseGroups(defaultGroups().map((g) => (g.name === 'FIRMMIT-ADMIN' ? group('ADMIN', []) : g)))).toEqual({
       ok: false,
       code: 'admin_group_empty',
     });
     expect(
-      parseGroups(defaultGroups().map((g) => (g.name === 'BREAKGLASS' ? group('BREAKGLASS', ['x@example.invalid'], ['x@example.invalid']) : g))),
+      parseGroups(defaultGroups().map((g) => (g.name === 'FIRMMIT-BREAKGLASS' ? group('BREAKGLASS', ['x@example.invalid'], ['x@example.invalid']) : g))),
     ).toEqual({ ok: false, code: 'admin_group_empty' });
   });
 
   it('빈 그룹은 정상 (해당 그룹 전원 제거)', () => {
-    const r = parseGroups(defaultGroups().map((g) => (g.name === 'NONGJAJAE' ? group('NONGJAJAE', []) : g)));
+    const r = parseGroups(defaultGroups().map((g) => (g.name === 'FIRMMIT-NONGJAJAE' ? group('NONGJAJAE', []) : g)));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.groups.find((g) => g.group_name === 'NONGJAJAE')!.emails).toEqual([]);
@@ -222,7 +241,7 @@ describe('WP1 응답 해석', () => {
       null,
     ];
     for (const rule of others) {
-      const r = parseGroups(defaultGroups().map((g) => (g.name === 'ALL' ? { ...group('ALL', [ADMIN]), include: [rule] } : g)));
+      const r = parseGroups(defaultGroups().map((g) => (g.name === 'FIRMMIT-ALL' ? { ...group('ALL', [ADMIN]), include: [rule] } : g)));
       expect(r).toEqual({ ok: false, code: 'unknown_rule' });
     }
   });
@@ -230,7 +249,7 @@ describe('WP1 응답 해석', () => {
   it('이메일 형식이 아니면 실패', () => {
     for (const bad of ['not-an-email', '', '  ', 'a@', '@b.invalid', 123, null]) {
       const r = parseGroups(
-        defaultGroups().map((g) => (g.name === 'ALL' ? { ...group('ALL', []), include: [{ email: { email: bad } }] } : g)),
+        defaultGroups().map((g) => (g.name === 'FIRMMIT-ALL' ? { ...group('ALL', []), include: [{ email: { email: bad } }] } : g)),
       );
       expect(r.ok).toBe(false);
       if (r.ok) return;
@@ -241,14 +260,14 @@ describe('WP1 응답 해석', () => {
   it('require: 로그인 방식 조건만 허용하고 구성원 계산에 쓰지 않음', () => {
     const ok = parseGroups(
       defaultGroups().map((g) =>
-        g.name === 'ALL' ? { ...group('ALL', [ADMIN]), require: [{ login_method: { id: 'idp-1' } }, { auth_method: { auth_method: 'otp' } }] } : g,
+        g.name === 'FIRMMIT-ALL' ? { ...group('ALL', [ADMIN]), require: [{ login_method: { id: 'idp-1' } }, { auth_method: { auth_method: 'otp' } }] } : g,
       ),
     );
     expect(ok.ok).toBe(true);
     if (ok.ok) expect(ok.groups.find((g) => g.group_name === 'ALL')!.emails).toEqual([ADMIN]);
 
     const bad = parseGroups(
-      defaultGroups().map((g) => (g.name === 'ALL' ? { ...group('ALL', [ADMIN]), require: [{ email: { email: ADMIN } }] } : g)),
+      defaultGroups().map((g) => (g.name === 'FIRMMIT-ALL' ? { ...group('ALL', [ADMIN]), require: [{ email: { email: ADMIN } }] } : g)),
     );
     expect(bad).toEqual({ ok: false, code: 'unknown_rule' });
   });
@@ -259,7 +278,7 @@ describe('WP1 응답 해석', () => {
 
   it('그룹 객체·규칙 배열 형태가 다르면 실패', () => {
     expect(parseGroups(['x'])).toEqual({ ok: false, code: 'invalid_response' });
-    expect(parseGroups(defaultGroups().map((g) => (g.name === 'ALL' ? { ...g, include: 'nope' } : g)))).toEqual({
+    expect(parseGroups(defaultGroups().map((g) => (g.name === 'FIRMMIT-ALL' ? { ...g, include: 'nope' } : g)))).toEqual({
       ok: false,
       code: 'invalid_response',
     });
@@ -277,7 +296,7 @@ describe('WP1 동기화 실행', () => {
     const api = fakeApi({ body: okBody(defaultGroups()) }, clock);
     const r = await runGroupSync(d1 as unknown as D1Database, makeEnv(d1, AUTO_ENV), api.deps);
 
-    expect(r).toMatchObject({ ok: true, changed: true, groups: 8, members: 7 });
+    expect(r).toMatchObject({ ok: true, changed: true, groups: 9, members: 7 });
     expect(api.calls).toHaveLength(1);
     expect(api.calls[0]!.url).toBe(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/access/groups?page=1&per_page=100`);
     expect(new Headers(api.calls[0]!.init!.headers).get('Authorization')).toBe(`Bearer ${TOKEN}`);
@@ -342,13 +361,13 @@ describe('WP1 동기화 실행', () => {
       { name: '잘못된 JSON', spec: { text: '{not json' }, code: 'invalid_json' },
       { name: 'success:false', spec: { body: { success: false, errors: [], result: [] } }, code: 'api_not_ok' },
       { name: 'result 아님', spec: { body: { success: true, result: { a: 1 } } }, code: 'invalid_response' },
-      { name: '필수 그룹 누락', spec: { body: okBody(defaultGroups().filter((g) => g.name !== 'UZ')) }, code: 'missing_group' },
+      { name: '필수 그룹 누락', spec: { body: okBody(defaultGroups().filter((g) => g.name !== 'FIRMMIT-UZ')) }, code: 'missing_group' },
       {
         name: '알 수 없는 규칙',
-        spec: { body: okBody(defaultGroups().map((g) => (g.name === 'RND' ? { ...group('RND', []), include: [{ everyone: {} }] } : g))) },
+        spec: { body: okBody(defaultGroups().map((g) => (g.name === 'FIRMMIT-RND' ? { ...group('RND', []), include: [{ everyone: {} }] } : g))) },
         code: 'unknown_rule',
       },
-      { name: 'ADMIN 0명', spec: { body: okBody(defaultGroups().map((g) => (g.name === 'ADMIN' ? group('ADMIN', []) : g))) }, code: 'admin_group_empty' },
+      { name: 'ADMIN 0명', spec: { body: okBody(defaultGroups().map((g) => (g.name === 'FIRMMIT-ADMIN' ? group('ADMIN', []) : g))) }, code: 'admin_group_empty' },
     ];
 
     for (const f of failures) {
@@ -454,7 +473,7 @@ describe('WP1 권한 반영', () => {
   }
 
   it('모든 그룹에서 빠진 직원은 같은 JWT 로도 403', async () => {
-    const { h, r } = await syncedHarness(defaultGroups().map((g) => (g.name === 'ALL' ? group('ALL', [ADMIN, ADMIN2]) : g.name === 'NONGJAJAE' ? group('NONGJAJAE', []) : g)));
+    const { h, r } = await syncedHarness(defaultGroups().map((g) => (g.name === 'FIRMMIT-ALL' ? group('ALL', [ADMIN, ADMIN2]) : g.name === 'FIRMMIT-NONGJAJAE' ? group('NONGJAJAE', []) : g)));
     expect(r).toMatchObject({ ok: true });
     const t = await h.token(STAFF);
     const res = await h.call('/api/me', { token: t });
@@ -463,7 +482,7 @@ describe('WP1 권한 반영', () => {
   });
 
   it('일부 그룹에서만 빠지면 그 그룹 상한에 기대던 권한만 무시', async () => {
-    const { h } = await syncedHarness(defaultGroups().map((g) => (g.name === 'NONGJAJAE' ? group('NONGJAJAE', []) : g)));
+    const { h } = await syncedHarness(defaultGroups().map((g) => (g.name === 'FIRMMIT-NONGJAJAE' ? group('NONGJAJAE', []) : g)));
     const me = await json(await h.call('/api/me', { token: await h.token(STAFF) }));
     expect(me.groups).toEqual(['ALL']);
     expect(me.roles).toEqual([]); // nongjajae OPERATOR 는 상한이 없어 무시됨
@@ -472,11 +491,11 @@ describe('WP1 권한 반영', () => {
   it('동기화 실패가 30분 넘게 이어지면 비ADMIN 쓰기 거부', async () => {
     const h = await harness(AUTO_ENV);
     seedOrg(h.sqlite);
-    seedUser(h.sqlite, { email: 'op@example.test', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'OPERATOR' }] });
+    seedUser(h.sqlite, { email: 'op@example.invalid', groups: ['ADMIN'], grants: [{ app_id: 'hub', role: 'OPERATOR' }] });
     h.clock.now = new Date(NOW.getTime() + 31 * 60 * 1000);
     await runGroupSync(h.env.DB, h.env, fakeApi({ status: 500, text: '' }, h.clock).deps);
 
-    const res = await h.call('/api/admin/users', { token: await h.token('op@example.test'), body: {} });
+    const res = await h.call('/api/admin/users', { token: await h.token('op@example.invalid'), body: {} });
     expect(res.status).toBe(403);
     expect((await json(res)).error.code).toBe('group_snapshot_stale');
   });

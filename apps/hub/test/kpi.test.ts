@@ -479,9 +479,9 @@ describe('WP2 응답 형식', () => {
   it('R4 §2.3 필드가 모두 있다', async () => {
     const h = await harness();
     seedOrg(h.sqlite);
-    seedUser(h.sqlite, { email: 'v@example.test', groups: ['ALL'] });
+    seedUser(h.sqlite, { email: 'v@example.invalid', groups: ['ALL'] });
     await refreshed(h);
-    const body = await json(await h.call('/api/kpi', { token: await h.token('v@example.test') }));
+    const body = await json(await h.call('/api/kpi', { token: await h.token('v@example.invalid') }));
     const k = body.kpis[0];
     for (const f of ['kpi_id', 'definition_version', 'status', 'display_status', 'source_status', 'measure', 'period',
       'updated_at', 'data_as_of', 'fetched_at', 'last_success_at', 'age_seconds', 'stale', 'view_level']) {
