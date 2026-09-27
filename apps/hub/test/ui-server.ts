@@ -71,9 +71,9 @@ await appendAudit(db, { ts: iso(-300_000), actor_email: 'admin1@example.invalid'
 const cam = sqlite.prepare(
   'INSERT INTO cctv_cameras (camera_id, name_ko, site, stream_kind, stream_path, status, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 );
-cam.run('cheonan-gate', '천안 정문', '천안', 'mp4', '/live/cheonan-gate.mp4', 'active', 10, now.toISOString(), now.toISOString());
-cam.run('icheon-vfarm', '이천 재배동', '이천', 'snapshot', '/snapshot/icheon.jpg', 'active', 20, now.toISOString(), now.toISOString());
-cam.run('nonsan-apc', '논산 APC', '논산', 'mp4', null, 'not_connected', 30, now.toISOString(), now.toISOString());
+cam.run('akis-gh1', 'AKIS 온실 1동', '타슈켄트 AKIS', 'mp4', '/live/akis-gh1.mp4', 'active', 10, now.toISOString(), now.toISOString());
+cam.run('akis-gh2', 'AKIS 온실 2동', '타슈켄트 AKIS', 'snapshot', '/snapshot/akis-gh2.jpg', 'active', 20, now.toISOString(), now.toISOString());
+cam.run('akis-nursery', 'AKIS 육묘장', '타슈켄트 AKIS', 'mp4', null, 'not_connected', 30, now.toISOString(), now.toISOString());
 
 // 화면 확인용 설정. CCTV=off 로 두면 "꺼짐" 안내 화면을 찍을 수 있다.
 const CCTV_ON = process.env.CCTV !== 'off';

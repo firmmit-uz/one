@@ -189,8 +189,8 @@ def flow_cctv_play(browser, base):
     page.goto(f"{base}/#/cctv")
     page.wait_for_selector("table tbody tr")
     before = page.evaluate("async () => (await (await fetch('/api/admin/audit?limit=1')).json()).entries[0].action")
-    # 사진 방식 카메라(이천 재배동)를 연다 — 가짜 중계 서버가 고정 그림 1장을 준다
-    page.locator("tr", has_text="이천 재배동").get_by_role("button", name="영상 보기").click()
+    # 사진 방식 카메라(AKIS 온실 2동)를 연다 — 가짜 중계 서버가 고정 그림 1장을 준다
+    page.locator("tr", has_text="AKIS 온실 2동").get_by_role("button", name="영상 보기").click()
     page.wait_for_selector(".cctv-stage img.cctv-media")
     page.wait_for_function("() => { const i = document.querySelector('.cctv-stage img'); return i && i.complete && i.naturalWidth > 0; }", timeout=5000)
     img = page.evaluate("""() => { const i = document.querySelector('.cctv-stage img');
@@ -211,7 +211,7 @@ def flow_cctv_play(browser, base):
         probs.append(f"image did not load: {img}")
     if before == "cctv_view_open":
         probs.append("audit already had cctv_view_open before opening")
-    if after.get("action") != "cctv_view_open" or after.get("target") != "camera:icheon-vfarm":
+    if after.get("action") != "cctv_view_open" or after.get("target") != "camera:akis-gh2":
         probs.append(f"cctv open not audited: {after.get('action')} {after.get('target')}")
     detail = str(after.get("detail"))
     if "relay.example.test" in detail or "/snapshot/" in detail:
@@ -237,7 +237,7 @@ def flow_cctv_mobile_actions(browser, base):
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
     page.goto(f"{base}/#/cctv")
     page.wait_for_selector("table tbody tr")
-    row = page.locator("tr", has_text="이천 재배동")
+    row = page.locator("tr", has_text="AKIS 온실 2동")
     btn = row.get_by_role("button", name="영상 보기")
     badge = row.locator(".badge")
     visible = {"button": btn.is_visible(), "badge": badge.first.is_visible(),
@@ -359,7 +359,14 @@ def main():
             shoot(browser, base, "status-admin-ko-390", "status", 390, 844)
             shoot(browser, base, "admin-ko-1440", "admin", 1440, 900)
             shoot(browser, base, "admin-ko-390", "admin", 390, 844)
-            shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn", expect=admin_tab_visible(False))
+            def uz_date_ok(page, c):
+                import re
+                txt = page.locator("main").inner_text()
+                if re.search(r"\bM\d{2}\b", txt):
+                    return ["uz date fell back to ICU placeholder (M09)"]
+                return [] if re.search(r"\b\d{1,2}-(yan|fev|mar|apr|may|iyn|iyl|avg|sen|okt|noy|dek), \d{4}, \d{2}:\d{2}\b", txt) else ["uz date format missing"]
+            shoot(browser, base, "home-staff-uz-1440", "home", 1440, 900, as_user="staff", lang="uz-Latn",
+                  expect=lambda p, c: admin_tab_visible(False)(p, c) + uz_date_ok(p, c))
             shoot(browser, base, "home-staff-ru-390", "home", 390, 844, as_user="staff", lang="ru")
             shoot(browser, base, "status-staff-ru-390", "status", 390, 844, as_user="staff", lang="ru")
             shoot(browser, base, "me-staff-ko-390", "me", 390, 844, as_user="staff")

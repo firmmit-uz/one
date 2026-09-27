@@ -74,10 +74,18 @@ function appName(app) {
   return n.ko || app.app_id;
 }
 
+// 우즈베크어 달 이름(CLDR uz 약어). 축소 ICU 브라우저는 uz 를 "2026 M09 20" 로 그리므로 직접 만든다.
+const UZ_MONTHS = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+const two = (n) => String(n).padStart(2, '0');
+
 function fmtTime(iso) {
   if (!iso) return t('none');
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
+  if (state.lang === 'uz-Latn') {
+    // CLDR uz medium 과 같은 모양: 20-sen, 2026, 13:07 (브라우저 현지 시각)
+    return `${d.getDate()}-${UZ_MONTHS[d.getMonth()]}, ${d.getFullYear()}, ${two(d.getHours())}:${two(d.getMinutes())}`;
+  }
   try {
     return new Intl.DateTimeFormat(state.lang, { dateStyle: 'medium', timeStyle: 'short' }).format(d);
   } catch {

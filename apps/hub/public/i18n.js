@@ -508,7 +508,7 @@ export const DICT = {
     action_group_sync_stale: 'Guruhlar roʻyxati eskirdi',
     action_uptime_state_change: 'Ishlash holati oʻzgardi',
     action_breakglass_login: 'Favqulodda hisob bilan kirish',
-    footer_note: 'FIRMMIT ONE hub v1 · 1.5-bosqich (faqat ichki koʻrsatkichlar)',
+    footer_note: 'FIRMMIT ONE hub v1 · 1.5-bosqich (faqat ichki koʻrsatkichlar · tashqi maʼlumotlar ulanmagan)',
   },
   ru: {
     skip_link: 'Перейти к содержимому',
@@ -735,6 +735,6 @@ export const DICT = {
     action_group_sync_stale: 'Список групп устарел',
     action_uptime_state_change: 'Изменилось состояние доступности',
     action_breakglass_login: 'Вход под аварийной учётной записью',
-    footer_note: 'Хаб FIRMMIT ONE v1 · Этап 1.5 (только внутренние показатели)',
+    footer_note: 'Хаб FIRMMIT ONE v1 · Этап 1.5 (только внутренние показатели · без внешних данных)',
   },
 };
